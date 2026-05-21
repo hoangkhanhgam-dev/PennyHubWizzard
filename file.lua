@@ -794,6 +794,8 @@ end)
 local AUTO_SELL_ENABLED = true
 local AUTO_SELL_INTERVAL = 60 -- seconds
 local MIN_GOLD_FOR_BAG_UPGRADE = 10000
+local AUTO_UPGRADE_STO_ENABLED = true
+local AUTO_UPGRADE_STO_INTERVAL = 5 -- seconds
 
 local SELL_ITEM_NAME = {
     ["LightShard"] = true,
@@ -890,11 +892,6 @@ local function as_getCurrentGold()
 end
 
 local function as_upgradeBagCapacity()
-    local gold = as_getCurrentGold()
-    if gold < MIN_GOLD_FOR_BAG_UPGRADE then
-        return false
-    end
-
     local args = {
         "\232\131\140\229\140\133\229\174\185\233\135\143\233\135\145\229\184\129\229\141\135\231\186\167",
         {
@@ -1244,6 +1241,16 @@ if AUTO_SELL_ENABLED then
         while true do
             runAutoSellOnce()
             task.wait(AUTO_SELL_INTERVAL)
+        end
+    end)
+end
+
+if AUTO_UPGRADE_STO_ENABLED then
+    task.spawn(function()
+        task.wait(3)
+        while true do
+            as_upgradeBagCapacity()
+            task.wait(AUTO_UPGRADE_STO_INTERVAL)
         end
     end)
 end
