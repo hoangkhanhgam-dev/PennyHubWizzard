@@ -13,6 +13,9 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local Lighting = game:GetService("Lighting")
 local Terrain = workspace:FindFirstChildOfClass("Terrain")
 
+local STARTUP_DELAY = 2.5
+task.wait(STARTUP_DELAY)
+
 local lp = Players.LocalPlayer
 local Msg = ReplicatedStorage:WaitForChild("Msg")
 
