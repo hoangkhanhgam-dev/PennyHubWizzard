@@ -267,10 +267,20 @@ local WORLD_MAX_Y = tonumber(CONFIG.Combat.WorldMaxY) or 3000
 local WORLD_MAX_ABS_XZ = tonumber(CONFIG.Combat.WorldMaxAbsXZ) or 25000
 
 -- AUTO STO TOGGLE
-local AUTO_STO_SETTINGS = {
-    ENABLED = CONFIG.AutoSto.Enabled ~= false,   -- true = bat auto nang sto, false = tat
-    INTERVAL = tonumber(CONFIG.AutoSto.Interval) or 2, -- so giay moi lan auto nang
-}
+local AUTO_STO_SETTINGS = GLOBAL_ENV.PENNY_AUTO_STO
+if type(AUTO_STO_SETTINGS) ~= "table" then
+    AUTO_STO_SETTINGS = {
+        ENABLED = CONFIG.AutoSto.Enabled ~= false,   -- true = bat auto nang sto, false = tat
+        INTERVAL = tonumber(CONFIG.AutoSto.Interval) or 2, -- so giay moi lan auto nang
+    }
+else
+    if AUTO_STO_SETTINGS.ENABLED == nil then
+        AUTO_STO_SETTINGS.ENABLED = CONFIG.AutoSto.Enabled ~= false
+    end
+    if AUTO_STO_SETTINGS.INTERVAL == nil then
+        AUTO_STO_SETTINGS.INTERVAL = tonumber(CONFIG.AutoSto.Interval) or 2
+    end
+end
 GLOBAL_ENV.PENNY_AUTO_STO = AUTO_STO_SETTINGS
 
 local function toBool(v, defaultValue)
@@ -297,13 +307,34 @@ local function isAutoStoEnabled()
     local cfgB = GLOBAL_ENV.PENNY_CONFIG and GLOBAL_ENV.PENNY_CONFIG.AutoSto
 
     local aEnabled = true
-    if type(cfgA) == "table" and cfgA.ENABLED ~= nil then
-        aEnabled = toBool(cfgA.ENABLED, true)
+    if cfgA ~= nil then
+        if type(cfgA) == "table" then
+            local raw = cfgA.ENABLED
+            if raw == nil then
+                raw = cfgA.Enabled
+            end
+            if raw ~= nil then
+                aEnabled = toBool(raw, true)
+            end
+        else
+            aEnabled = toBool(cfgA, true)
+        end
     end
 
     local bEnabled = true
-    if type(cfgB) == "table" and cfgB.Enabled ~= nil then
-        bEnabled = toBool(cfgB.Enabled, true)
+    if cfgB ~= nil then
+        if type(cfgB) == "table" then
+            local raw = cfgB.Enabled
+            if raw == nil then
+                raw = cfgB.ENABLED
+            end
+            if raw ~= nil then
+                bEnabled = toBool(raw, true)
+            end
+        else
+            -- Allow shorthand external config: PENNY_CONFIG.AutoSto = false
+            bEnabled = toBool(cfgB, true)
+        end
     end
 
     return aEnabled and bEnabled
@@ -317,8 +348,15 @@ local function getAutoStoInterval()
     if type(cfgA) == "table" then
         n = tonumber(cfgA.INTERVAL)
     end
-    if type(cfgB) == "table" and cfgB.Interval ~= nil then
-        n = tonumber(cfgB.Interval)
+    if type(cfgB) == "table" then
+        if cfgB.Interval ~= nil then
+            n = tonumber(cfgB.Interval)
+        end
+        if (not n) and cfgB.INTERVAL ~= nil then
+            n = tonumber(cfgB.INTERVAL)
+        end
+    elseif type(cfgB) == "number" then
+        n = cfgB
     end
     if not n or n < 0.2 then
         return 0.2
