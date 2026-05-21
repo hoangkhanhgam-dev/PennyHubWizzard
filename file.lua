@@ -92,6 +92,9 @@ local DEFAULT_CONFIG = {
         NotifyStart = true,
         NotifySell = true,
         NotifyError = true,
+        NotifyMoney = true,
+        MoneyInterval = 60,
+        MoneyOnlyOnChange = true,
     },
     UI = {
         Hide = false,
@@ -139,6 +142,7 @@ local Msg = ReplicatedStorage:WaitForChild("Msg")
 local WEBHOOK_REQUEST = (syn and syn.request) or (http and http.request) or request or http_request
 local WEBHOOK_CFG = CONFIG.Webhook or {}
 local webhookLastAt = 0
+local webhookLastMoneyText = nil
 
 local function webhookIsEnabled()
     return WEBHOOK_CFG.Enabled == true
@@ -194,6 +198,72 @@ local function webhookSend(eventName, message, force)
     return code < 400
 end
 
+local function webhookGetMoneyText()
+    local ok, text = pcall(function()
+        local pg = lp:FindFirstChild("PlayerGui")
+        if not pg then
+            return ""
+        end
+
+        local coinGui = pg:FindFirstChild("CoinGui")
+        if not coinGui then
+            return ""
+        end
+
+        local money = coinGui:FindFirstChild("Money")
+        if not money then
+            return ""
+        end
+
+        local iconLabel = money:FindFirstChild("IconLabel")
+        if not iconLabel then
+            return ""
+        end
+
+        if iconLabel:IsA("TextLabel") or iconLabel:IsA("TextButton") or iconLabel:IsA("TextBox") then
+            return tostring(iconLabel.Text or "")
+        end
+
+        for _, d in ipairs(iconLabel:GetDescendants()) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+                local t = tostring(d.Text or "")
+                if t ~= "" then
+                    return t
+                end
+            end
+        end
+
+        return ""
+    end)
+
+    if not ok then
+        return ""
+    end
+    return tostring(text or "")
+end
+
+local function webhookSendMoney(force)
+    if WEBHOOK_CFG.NotifyMoney ~= true then
+        return false
+    end
+
+    local text = webhookGetMoneyText()
+    if text == "" then
+        return false
+    end
+
+    if WEBHOOK_CFG.MoneyOnlyOnChange ~= false and (not force) and webhookLastMoneyText == text then
+        return false
+    end
+
+    webhookLastMoneyText = text
+    return webhookSend(
+        "Money Update",
+        "CoinGui.Money.IconLabel: " .. text,
+        force
+    )
+end
+
 -- Runtime guard: prevents old loops from previous executions from continuing.
 GLOBAL_ENV.__PENNY_RUNTIME = GLOBAL_ENV.__PENNY_RUNTIME or { run_id = 0 }
 GLOBAL_ENV.__PENNY_RUNTIME.run_id = (GLOBAL_ENV.__PENNY_RUNTIME.run_id or 0) + 1
@@ -211,6 +281,31 @@ if WEBHOOK_CFG.NotifyStart ~= false then
             "RunId: " .. tostring(THIS_RUN_ID) .. "\nPlaceId: " .. tostring(game.PlaceId),
             true
         )
+    end)
+end
+
+if WEBHOOK_CFG.NotifyMoney == true then
+    task.spawn(function()
+        task.wait(2)
+        if not isRunActive() then
+            return
+        end
+
+        webhookSendMoney(true)
+
+        while isRunActive() do
+            local interval = tonumber(WEBHOOK_CFG.MoneyInterval) or 60
+            if interval < 5 then
+                interval = 5
+            end
+
+            task.wait(interval)
+            if not isRunActive() then
+                break
+            end
+
+            webhookSendMoney(false)
+        end
     end)
 end
 
