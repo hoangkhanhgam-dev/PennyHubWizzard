@@ -795,7 +795,7 @@ local AUTO_SELL_ENABLED = true
 local AUTO_SELL_INTERVAL = 60 -- seconds
 local MIN_GOLD_FOR_BAG_UPGRADE = 10000
 local AUTO_UPGRADE_STO_ENABLED = true
-local AUTO_UPGRADE_STO_INTERVAL = 5 -- seconds
+local AUTO_UPGRADE_STO_INTERVAL = 2 -- seconds
 
 local SELL_ITEM_NAME = {
     ["LightShard"] = true,
@@ -820,7 +820,12 @@ local EXCLUDE_ITEM_NAME = {
 }
 
 local OPEN_SELL_POP = "\230\137\147\229\188\128\231\149\140\233\157\162"
-local AutoRemoteFunction = Msg:WaitForChild("RemoteFunction"):WaitForChild("RemoteFunction")
+local STO_UPGRADE_ARGS = {
+    "\232\131\140\229\140\133\229\174\185\233\135\143\233\135\145\229\184\129\229\141\135\231\186\167",
+    {
+        itemTp = 2
+    }
+}
 
 local function as_parseMoneyText(raw)
     local s = tostring(raw or ""):lower()
@@ -892,16 +897,19 @@ local function as_getCurrentGold()
 end
 
 local function as_upgradeBagCapacity()
-    local args = {
-        "\232\131\140\229\140\133\229\174\185\233\135\143\233\135\145\229\184\129\229\141\135\231\186\167",
-        {
-            itemTp = 2
-        }
-    }
-    pcall(function()
-        AutoRemoteFunction:InvokeServer(unpack(args))
+    local ok, err = pcall(function()
+        game:GetService("ReplicatedStorage")
+            :WaitForChild("Msg")
+            :WaitForChild("RemoteFunction")
+            :WaitForChild("RemoteFunction")
+            :InvokeServer(unpack(STO_UPGRADE_ARGS))
     end)
-    return true
+
+    if not ok then
+        warn("[AutoSTO] Invoke failed:", err)
+    end
+
+    return ok
 end
 
 local function as_cleanName(txt)
@@ -1247,8 +1255,11 @@ end
 
 if AUTO_UPGRADE_STO_ENABLED then
     task.spawn(function()
-        task.wait(3)
+        task.wait(1)
         while true do
+            -- call 2 quick times each cycle for reliability
+            as_upgradeBagCapacity()
+            task.wait(0.15)
             as_upgradeBagCapacity()
             task.wait(AUTO_UPGRADE_STO_INTERVAL)
         end
