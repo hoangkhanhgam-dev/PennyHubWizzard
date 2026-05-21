@@ -1,4 +1,4 @@
-﻿--// FULL SCRIPT - Orbit Smooth Mode (Bay Deu)
+--// FULL SCRIPT - Orbit Smooth Mode (Bay Deu)
 pcall(function()
     if setfpscap then
         setfpscap(20)
