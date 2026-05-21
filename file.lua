@@ -649,20 +649,7 @@ RunService.Heartbeat:Connect(function(dt)
             hrp.AssemblyAngularVelocity = Vector3.zero
         end)
 
-        if tick() - lastSkill >= SKILL_DELAY then
-            lastSkill = tick()
-            task.spawn(function()
-                for _, skillId in ipairs(SKILL_IDS) do
-                    castSkill(skillId, currentTarget, hrp)
-                    task.wait(0.03)
-                end
-            end)
-        end
-
-        if tick() - lastDash >= DASH_DELAY then
-            lastDash = tick()
-            castDash(currentTarget, hrp)
-        end
+        -- Auto skill + auto dash disabled by request.
 
         if tick() - lastAttr >= ATTR_DELAY then
             lastAttr = tick()
@@ -677,6 +664,7 @@ end)
 
 local AUTO_SELL_ENABLED = true
 local AUTO_SELL_INTERVAL = 60 -- seconds
+local MIN_GOLD_FOR_BAG_UPGRADE = 10000
 
 local SELL_ITEM_NAME = {
     ["LightShard"] = true,
@@ -703,7 +691,81 @@ local EXCLUDE_ITEM_NAME = {
 local OPEN_SELL_POP = "\230\137\147\229\188\128\231\149\140\233\157\162"
 local AutoRemoteFunction = Msg:WaitForChild("RemoteFunction"):WaitForChild("RemoteFunction")
 
+local function as_parseMoneyText(raw)
+    local s = tostring(raw or ""):lower()
+    s = s:gsub(",", "")
+    s = s:gsub("%s+", "")
+
+    local num, suffix = s:match("([%d%.]+)([kmb])")
+    if num then
+        local n = tonumber(num) or 0
+        local mul = 1
+        if suffix == "k" then
+            mul = 1000
+        elseif suffix == "m" then
+            mul = 1000000
+        elseif suffix == "b" then
+            mul = 1000000000
+        end
+        return math.floor(n * mul)
+    end
+
+    local clean = s:gsub("[^%d%.%-]", "")
+    local n = tonumber(clean)
+    if not n then
+        return 0
+    end
+    return math.floor(n)
+end
+
+local function as_getCurrentGold()
+    local pg = lp:FindFirstChild("PlayerGui")
+    if not pg then
+        return 0
+    end
+
+    local coinGui = pg:FindFirstChild("CoinGui")
+    if not coinGui then
+        return 0
+    end
+
+    local money = coinGui:FindFirstChild("Money")
+    if not money then
+        return 0
+    end
+
+    local iconLabel = money:FindFirstChild("IconLabel")
+    if not iconLabel then
+        return 0
+    end
+
+    local text = nil
+    pcall(function()
+        text = iconLabel.Text
+    end)
+
+    if text and text ~= "" then
+        return as_parseMoneyText(text)
+    end
+
+    for _, d in ipairs(iconLabel:GetDescendants()) do
+        if d:IsA("TextLabel") or d:IsA("TextButton") then
+            local t = tostring(d.Text or "")
+            if t ~= "" then
+                return as_parseMoneyText(t)
+            end
+        end
+    end
+
+    return 0
+end
+
 local function as_upgradeBagCapacity()
+    local gold = as_getCurrentGold()
+    if gold < MIN_GOLD_FOR_BAG_UPGRADE then
+        return false
+    end
+
     local args = {
         "\232\131\140\229\140\133\229\174\185\233\135\143\233\135\145\229\184\129\229\141\135\231\186\167",
         {
@@ -713,6 +775,7 @@ local function as_upgradeBagCapacity()
     pcall(function()
         AutoRemoteFunction:InvokeServer(unpack(args))
     end)
+    return true
 end
 
 local function as_cleanName(txt)
