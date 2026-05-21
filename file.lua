@@ -1,7 +1,7 @@
 --// FULL SCRIPT - Orbit Smooth Mode (Bay Deu)
 pcall(function()
     if setfpscap then
-        setfpscap(20)
+        setfpscap(10)
     end
 end)
 
@@ -10,9 +10,113 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local Lighting = game:GetService("Lighting")
+local Terrain = workspace:FindFirstChildOfClass("Terrain")
 
 local lp = Players.LocalPlayer
 local Msg = ReplicatedStorage:WaitForChild("Msg")
+
+local STRIP_MAP_GRAPHICS = true
+local DISABLE_3D_RENDERING = false -- set true if you want maximum performance (white screen)
+local FORCE_LOW_QUALITY_LEVEL = true
+
+local function stripVisualNode(obj)
+    if obj:IsA("Decal")
+        or obj:IsA("Texture")
+        or obj:IsA("SurfaceAppearance")
+        or obj:IsA("ParticleEmitter")
+        or obj:IsA("Trail")
+        or obj:IsA("Beam")
+        or obj:IsA("Smoke")
+        or obj:IsA("Fire")
+        or obj:IsA("Sparkles") then
+        pcall(function()
+            obj:Destroy()
+        end)
+        return
+    end
+
+    if obj:IsA("BasePart") then
+        local char = lp.Character
+        if char and obj:IsDescendantOf(char) then
+            return
+        end
+
+        pcall(function()
+            obj.Material = Enum.Material.SmoothPlastic
+            obj.Reflectance = 0
+            obj.CastShadow = false
+        end)
+    end
+end
+
+local function stripMapGraphics()
+    if not STRIP_MAP_GRAPHICS then
+        return
+    end
+
+    -- Reduce expensive global effects
+    pcall(function()
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 1000000
+        Lighting.Brightness = 1
+    end)
+
+    for _, v in ipairs(Lighting:GetChildren()) do
+        if v:IsA("Atmosphere")
+            or v:IsA("BloomEffect")
+            or v:IsA("BlurEffect")
+            or v:IsA("ColorCorrectionEffect")
+            or v:IsA("DepthOfFieldEffect")
+            or v:IsA("SunRaysEffect") then
+            pcall(function()
+                v:Destroy()
+            end)
+        end
+    end
+
+    pcall(function()
+        if Terrain then
+            Terrain.WaterWaveSize = 0
+            Terrain.WaterWaveSpeed = 0
+            Terrain.WaterReflectance = 0
+            Terrain.WaterTransparency = 1
+        end
+    end)
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        stripVisualNode(obj)
+    end
+end
+
+local function applyExtraPerformanceTweaks()
+    if FORCE_LOW_QUALITY_LEVEL then
+        pcall(function()
+            settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        end)
+    end
+
+    if DISABLE_3D_RENDERING then
+        pcall(function()
+            RunService:Set3dRenderingEnabled(false)
+        end)
+    end
+end
+
+if STRIP_MAP_GRAPHICS then
+    task.spawn(function()
+        stripMapGraphics()
+        applyExtraPerformanceTweaks()
+    end)
+
+    workspace.DescendantAdded:Connect(function(obj)
+        stripVisualNode(obj)
+    end)
+else
+    task.spawn(function()
+        applyExtraPerformanceTweaks()
+    end)
+end
 
 local SkillRemote = Msg:WaitForChild("RemoteEvent"):WaitForChild("ReleaseGroupSkill")
 local AttrRemote = Msg:WaitForChild("RemoteFunction"):WaitForChild("RemoteFunction")
@@ -126,6 +230,12 @@ local function hasAnyQuest()
 end
 
 local function getGuiTextAll()
+    -- Cache GUI scan to reduce expensive full-descendant scans every tick.
+    local now = tick()
+    if getGuiTextAll._cache and (now - (getGuiTextAll._cacheAt or 0) <= 0.4) then
+        return getGuiTextAll._cache
+    end
+
     local pg = lp:FindFirstChild("PlayerGui")
     if not pg then
         return ""
@@ -137,7 +247,10 @@ local function getGuiTextAll()
             all = all .. " " .. tostring(v.Text)
         end
     end
-    return string.lower(all)
+    all = string.lower(all)
+    getGuiTextAll._cache = all
+    getGuiTextAll._cacheAt = now
+    return all
 end
 
 local function isDwarfKingQuest()
