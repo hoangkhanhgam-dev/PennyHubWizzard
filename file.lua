@@ -205,17 +205,27 @@ local function webhookGetMoneyText()
             return ""
         end
 
-        local coinGui = pg:FindFirstChild("CoinGui")
-        if not coinGui then
+        local systemGui = pg:FindFirstChild("SystemGui")
+        if not systemGui then
             return ""
         end
 
-        local money = coinGui:FindFirstChild("Money")
+        local leftFrame = systemGui:FindFirstChild("LeftFrame")
+        if not leftFrame then
+            return ""
+        end
+
+        local money = leftFrame:FindFirstChild("Money")
         if not money then
             return ""
         end
 
-        local iconLabel = money:FindFirstChild("IconLabel")
+        local frame = money:FindFirstChild("Frame")
+        if not frame then
+            return ""
+        end
+
+        local iconLabel = frame:FindFirstChild("IconLabel")
         if not iconLabel then
             return ""
         end
@@ -259,7 +269,7 @@ local function webhookSendMoney(force)
     webhookLastMoneyText = text
     return webhookSend(
         "Money Update",
-        "CoinGui.Money.IconLabel: " .. text,
+        "SystemGui.LeftFrame.Money.Frame.IconLabel: " .. text,
         force
     )
 end
@@ -1370,17 +1380,27 @@ local function as_getCurrentGold()
         return 0
     end
 
-    local coinGui = pg:FindFirstChild("CoinGui")
-    if not coinGui then
+    local systemGui = pg:FindFirstChild("SystemGui")
+    if not systemGui then
         return 0
     end
 
-    local money = coinGui:FindFirstChild("Money")
+    local leftFrame = systemGui:FindFirstChild("LeftFrame")
+    if not leftFrame then
+        return 0
+    end
+
+    local money = leftFrame:FindFirstChild("Money")
     if not money then
         return 0
     end
 
-    local iconLabel = money:FindFirstChild("IconLabel")
+    local frame = money:FindFirstChild("Frame")
+    if not frame then
+        return 0
+    end
+
+    local iconLabel = frame:FindFirstChild("IconLabel")
     if not iconLabel then
         return 0
     end
