@@ -83,6 +83,8 @@ local DEFAULT_CONFIG = {
     AutoSto = {
         Enabled = true,
         Interval = 2,
+        PotionEnabled = false,
+        PotionInterval = 2,
     },
     Webhook = {
         Enabled = false,
@@ -453,6 +455,8 @@ if type(AUTO_STO_SETTINGS) ~= "table" then
     AUTO_STO_SETTINGS = {
         ENABLED = CONFIG.AutoSto.Enabled ~= false,   -- true = bat auto nang sto, false = tat
         INTERVAL = tonumber(CONFIG.AutoSto.Interval) or 2, -- so giay moi lan auto nang
+        POTION_ENABLED = CONFIG.AutoSto.PotionEnabled == true,
+        POTION_INTERVAL = tonumber(CONFIG.AutoSto.PotionInterval) or tonumber(CONFIG.AutoSto.Interval) or 2,
     }
 else
     if AUTO_STO_SETTINGS.ENABLED == nil then
@@ -460,6 +464,12 @@ else
     end
     if AUTO_STO_SETTINGS.INTERVAL == nil then
         AUTO_STO_SETTINGS.INTERVAL = tonumber(CONFIG.AutoSto.Interval) or 2
+    end
+    if AUTO_STO_SETTINGS.POTION_ENABLED == nil and AUTO_STO_SETTINGS.PotionEnabled == nil then
+        AUTO_STO_SETTINGS.POTION_ENABLED = CONFIG.AutoSto.PotionEnabled == true
+    end
+    if AUTO_STO_SETTINGS.POTION_INTERVAL == nil and AUTO_STO_SETTINGS.PotionInterval == nil then
+        AUTO_STO_SETTINGS.POTION_INTERVAL = tonumber(CONFIG.AutoSto.PotionInterval) or tonumber(CONFIG.AutoSto.Interval) or 2
     end
 end
 GLOBAL_ENV.PENNY_AUTO_STO = AUTO_STO_SETTINGS
@@ -538,6 +548,65 @@ local function getAutoStoInterval()
         end
     elseif type(cfgB) == "number" then
         n = cfgB
+    end
+    if not n or n < 0.2 then
+        return 0.2
+    end
+    return n
+end
+
+local function isAutoStoPotionEnabled()
+    local cfgA = GLOBAL_ENV.PENNY_AUTO_STO
+    local cfgB = GLOBAL_ENV.PENNY_CONFIG and GLOBAL_ENV.PENNY_CONFIG.AutoSto
+
+    local aEnabled = false
+    if type(cfgA) == "table" then
+        local raw = cfgA.POTION_ENABLED
+        if raw == nil then
+            raw = cfgA.PotionEnabled
+        end
+        if raw ~= nil then
+            aEnabled = toBool(raw, false)
+        end
+    end
+
+    local bEnabled = false
+    if type(cfgB) == "table" then
+        local raw = cfgB.PotionEnabled
+        if raw == nil then
+            raw = cfgB.POTION_ENABLED
+        end
+        if raw ~= nil then
+            bEnabled = toBool(raw, false)
+        end
+    end
+
+    return aEnabled and bEnabled
+end
+
+local function getAutoStoPotionInterval()
+    local cfgA = GLOBAL_ENV.PENNY_AUTO_STO
+    local cfgB = GLOBAL_ENV.PENNY_CONFIG and GLOBAL_ENV.PENNY_CONFIG.AutoSto
+
+    local n = nil
+    if type(cfgA) == "table" then
+        n = tonumber(cfgA.POTION_INTERVAL)
+        if not n and cfgA.PotionInterval ~= nil then
+            n = tonumber(cfgA.PotionInterval)
+        end
+    end
+
+    if type(cfgB) == "table" then
+        if cfgB.PotionInterval ~= nil then
+            n = tonumber(cfgB.PotionInterval)
+        end
+        if (not n) and cfgB.POTION_INTERVAL ~= nil then
+            n = tonumber(cfgB.POTION_INTERVAL)
+        end
+    end
+
+    if not n then
+        n = getAutoStoInterval()
     end
     if not n or n < 0.2 then
         return 0.2
@@ -1346,6 +1415,12 @@ local STO_UPGRADE_ARGS = {
         itemTp = 2
     }
 }
+local STO_POTION_UPGRADE_ARGS = {
+    "\232\131\140\229\140\133\229\174\185\233\135\143\233\135\145\229\184\129\229\141\135\231\186\167",
+    {
+        itemTp = 9
+    }
+}
 
 local function as_parseMoneyText(raw)
     local s = tostring(raw or ""):lower()
@@ -1437,6 +1512,22 @@ local function as_upgradeBagCapacity()
 
     if not ok then
         warn("[AutoSTO] Invoke failed:", err)
+    end
+
+    return ok
+end
+
+local function as_upgradePotionCapacity()
+    local ok, err = pcall(function()
+        game:GetService("ReplicatedStorage")
+            :WaitForChild("Msg")
+            :WaitForChild("RemoteFunction")
+            :WaitForChild("RemoteFunction")
+            :InvokeServer(unpack(STO_POTION_UPGRADE_ARGS))
+    end)
+
+    if not ok then
+        warn("[AutoSTO-Potion] Invoke failed:", err)
     end
 
     return ok
@@ -1813,6 +1904,18 @@ task.spawn(function()
             else
                 task.wait(0.2)
             end
+        else
+            task.wait(0.5)
+        end
+    end
+end)
+
+task.spawn(function()
+    task.wait(1)
+    while isRunActive() do
+        if isAutoStoPotionEnabled() then
+            as_upgradePotionCapacity()
+            task.wait(getAutoStoPotionInterval())
         else
             task.wait(0.5)
         end
