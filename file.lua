@@ -84,6 +84,15 @@ local DEFAULT_CONFIG = {
         Enabled = true,
         Interval = 2,
     },
+    Webhook = {
+        Enabled = false,
+        Url = "",
+        Username = "PennyHub",
+        Cooldown = 2,
+        NotifyStart = true,
+        NotifySell = true,
+        NotifyError = true,
+    },
     UI = {
         Hide = false,
     },
@@ -127,6 +136,63 @@ task.wait(STARTUP_DELAY)
 
 local lp = Players.LocalPlayer
 local Msg = ReplicatedStorage:WaitForChild("Msg")
+local WEBHOOK_REQUEST = (syn and syn.request) or (http and http.request) or request or http_request
+local WEBHOOK_CFG = CONFIG.Webhook or {}
+local webhookLastAt = 0
+
+local function webhookIsEnabled()
+    return WEBHOOK_CFG.Enabled == true
+        and type(WEBHOOK_CFG.Url) == "string"
+        and WEBHOOK_CFG.Url ~= ""
+        and WEBHOOK_REQUEST ~= nil
+end
+
+local function webhookSend(eventName, message, force)
+    if not webhookIsEnabled() then
+        return false
+    end
+
+    local now = tick()
+    local cooldown = tonumber(WEBHOOK_CFG.Cooldown) or 2
+    if cooldown < 0 then
+        cooldown = 0
+    end
+
+    if (not force) and (now - webhookLastAt < cooldown) then
+        return false
+    end
+    webhookLastAt = now
+
+    local username = tostring(WEBHOOK_CFG.Username or "PennyHub")
+    local playerName = (lp and lp.Name) or "Unknown"
+    local content = string.format(
+        "[PennyHub] %s\nPlayer: %s\n%s",
+        tostring(eventName or "Event"),
+        tostring(playerName),
+        tostring(message or "")
+    )
+
+    local payload = HttpService:JSONEncode({
+        username = username,
+        content = content,
+        allowed_mentions = { parse = {} }
+    })
+
+    local ok, res = pcall(function()
+        return WEBHOOK_REQUEST({
+            Url = WEBHOOK_CFG.Url,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = payload
+        })
+    end)
+    if not ok then
+        return false
+    end
+
+    local code = tonumber(res and (res.StatusCode or res.Status or res.status_code)) or 200
+    return code < 400
+end
 
 -- Runtime guard: prevents old loops from previous executions from continuing.
 GLOBAL_ENV.__PENNY_RUNTIME = GLOBAL_ENV.__PENNY_RUNTIME or { run_id = 0 }
@@ -136,6 +202,16 @@ local THIS_RUN_ID = GLOBAL_ENV.__PENNY_RUNTIME.run_id
 local function isRunActive()
     return GLOBAL_ENV.__PENNY_RUNTIME
         and GLOBAL_ENV.__PENNY_RUNTIME.run_id == THIS_RUN_ID
+end
+
+if WEBHOOK_CFG.NotifyStart ~= false then
+    task.spawn(function()
+        webhookSend(
+            "Script Started",
+            "RunId: " .. tostring(THIS_RUN_ID) .. "\nPlaceId: " .. tostring(game.PlaceId),
+            true
+        )
+    end)
 end
 
 local STRIP_MAP_GRAPHICS = CONFIG.Performance.LowCPU == true
@@ -653,15 +729,15 @@ local function isKingDwarf(model)
         return false
     end
 
-    local hand = model:FindFirstChild("当前手持")
+    local hand = model:FindFirstChild("å½“å‰æ‰‹æŒ")
     if not hand then
         return false
     end
 
-    return descendantNameHas(hand, "矮人的战锤")
-        or descendantNameHas(hand, "战锤")
-        or descendantNameHas(hand, "核心2")
-        or descendantNameHas(hand, "岩浆")
+    return descendantNameHas(hand, "çŸ®äººçš„æˆ˜é”¤")
+        or descendantNameHas(hand, "æˆ˜é”¤")
+        or descendantNameHas(hand, "æ ¸å¿ƒ2")
+        or descendantNameHas(hand, "å²©æµ†")
         or descendantNameHas(hand, "8347")
         or descendantNameHas(hand, "8350")
         or descendantNameHas(hand, "8351")
@@ -690,7 +766,7 @@ local function isArcherGoblin(model)
 
     for _, v in ipairs(leftArm:GetChildren()) do
         local n = tostring(v.Name)
-        if n:find("对象241") or n:find("对象220") or n:find("Handle008") then
+        if n:find("å¯¹è±¡241") or n:find("å¯¹è±¡220") or n:find("Handle008") then
             return true
         end
     end
@@ -705,31 +781,31 @@ local function isWarhammerDwarf(model)
     local modelName = string.lower(tostring(model.Name or ""))
     if modelName:find("warhammer")
         or modelName:find("hammer")
-        or modelName:find("战锤")
-        or modelName:find("矮人") then
+        or modelName:find("æˆ˜é”¤")
+        or modelName:find("çŸ®äºº") then
         if not isArcherGoblin(model) then
             return true
         end
     end
 
-    local hand = model:FindFirstChild("当前手持")
+    local hand = model:FindFirstChild("å½“å‰æ‰‹æŒ")
     if not hand then
-        -- Fallback: some NPC variants may not expose 当前手持
-        if descendantNameHas(model, "战锤")
+        -- Fallback: some NPC variants may not expose å½“å‰æ‰‹æŒ
+        if descendantNameHas(model, "æˆ˜é”¤")
             or descendantNameHas(model, "Hammer")
             or descendantNameHas(model, "ham")
-            or descendantNameHas(model, "锤") then
+            or descendantNameHas(model, "é”¤") then
             return not isArcherGoblin(model)
         end
         return false
     end
 
     local hasDwarfWeapon =
-        descendantNameHas(hand, "矮人")
-        or descendantNameHas(hand, "战斧")
-        or descendantNameHas(hand, "锤")
-        or descendantNameHas(hand, "握把")
-        or descendantNameHas(hand, "核心")
+        descendantNameHas(hand, "çŸ®äºº")
+        or descendantNameHas(hand, "æˆ˜æ–§")
+        or descendantNameHas(hand, "é”¤")
+        or descendantNameHas(hand, "æ¡æŠŠ")
+        or descendantNameHas(hand, "æ ¸å¿ƒ")
 
     if not hasDwarfWeapon then
         return false
@@ -747,15 +823,15 @@ local function isPickaxeDwarf(model)
         return false
     end
 
-    local hand = model:FindFirstChild("当前手持")
+    local hand = model:FindFirstChild("å½“å‰æ‰‹æŒ")
     if not hand then
         return false
     end
 
     local hasPickaxeWeapon =
-        descendantNameHas(hand, "镐")
-        or descendantNameHas(hand, "稿")
-        or descendantNameHas(hand, "矿")
+        descendantNameHas(hand, "é•")
+        or descendantNameHas(hand, "ç¨¿")
+        or descendantNameHas(hand, "çŸ¿")
         or descendantNameHas(hand, "Pick")
         or descendantNameHas(hand, "pick")
         or descendantNameHas(hand, "NGon")
@@ -1338,7 +1414,7 @@ local function as_closeBlockingPopups()
         end
     end
 
-    -- ưu tiên popup hay chặn: Event/Notice/Announcement
+    -- Æ°u tiÃªn popup hay cháº·n: Event/Notice/Announcement
     for _, gui in ipairs(pg:GetChildren()) do
         if gui:IsA("ScreenGui") and gui.Enabled ~= false then
             local nm = tostring(gui.Name):lower()
@@ -1348,7 +1424,7 @@ local function as_closeBlockingPopups()
         end
     end
 
-    -- quét rộng thêm 1 lượt
+    -- quÃ©t rá»™ng thÃªm 1 lÆ°á»£t
     tryClickClose(pg)
 end
 local function as_isSellPopOpen()
@@ -1477,6 +1553,7 @@ end
 local function as_confirmSell()
     local sellPop = as_getSellPop()
     local sellAll = as_getSellAll()
+    local finalCount = 0
 
     -- step 1 (confirm thứ 1): dung dung block click ban dua, goi ngay sau khi select xong
     as_closeBlockingPopups()
@@ -1513,6 +1590,7 @@ local function as_confirmSell()
     if sellAll.Visible then
         as_unselectExcludedInSellAll()
         task.wait(0.1)
+        finalCount = as_countSellAllItems()
     end
 
     -- step 2 (confirm thứ 2): bấm OK 1 lần
@@ -1529,10 +1607,12 @@ local function as_confirmSell()
         as_clickGui(exitBtn)
     end
 
-    return sellAll.Visible == false
+    return sellAll.Visible == false, finalCount
 end
 
 local function runAutoSellOnce()
+    local soldCount = 0
+    local sellSuccess = false
     local ok, err = pcall(function()
         local MAX_SELL_RETRY = 3
         for attempt = 1, MAX_SELL_RETRY do
@@ -1551,8 +1631,10 @@ local function runAutoSellOnce()
 
             task.wait(0.2)
 
-            local confirmOk = as_confirmSell()
+            local confirmOk, finalCount = as_confirmSell()
             if confirmOk then
+                sellSuccess = true
+                soldCount = tonumber(finalCount) or 0
                 break
             end
 
@@ -1567,6 +1649,20 @@ local function runAutoSellOnce()
 
     if not ok then
         warn("[AutoSellLoop] error:", err)
+        if WEBHOOK_CFG.NotifyError ~= false then
+            webhookSend("AutoSell Error", tostring(err))
+        end
+        return
+    end
+
+    if sellSuccess then
+        if WEBHOOK_CFG.NotifySell ~= false then
+            webhookSend("AutoSell Success", "Sold items: " .. tostring(soldCount))
+        end
+    else
+        if WEBHOOK_CFG.NotifyError ~= false then
+            webhookSend("AutoSell Failed", "Could not confirm sell after retries.")
+        end
     end
 end
 
@@ -1607,6 +1703,7 @@ task.spawn(function()
         end
     end
 end)
+
 
 
 
