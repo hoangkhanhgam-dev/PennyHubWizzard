@@ -1,7 +1,115 @@
 --// FULL SCRIPT - Orbit Smooth Mode (Bay Deu)
+local GLOBAL_ENV = (getgenv and getgenv()) or _G
+
+local function deepCopy(tbl)
+    if type(tbl) ~= "table" then
+        return tbl
+    end
+    local out = {}
+    for k, v in pairs(tbl) do
+        out[k] = deepCopy(v)
+    end
+    return out
+end
+
+local function deepMerge(defaults, overrides)
+    if type(defaults) ~= "table" then
+        if overrides ~= nil then
+            return overrides
+        end
+        return defaults
+    end
+
+    local out = deepCopy(defaults)
+    if type(overrides) ~= "table" then
+        return out
+    end
+
+    for k, v in pairs(overrides) do
+        if type(v) == "table" and type(out[k]) == "table" then
+            out[k] = deepMerge(out[k], v)
+        else
+            out[k] = v
+        end
+    end
+    return out
+end
+
+local DEFAULT_CONFIG = {
+    General = {
+        StartupDelay = 2.5,
+    },
+    Performance = {
+        FpsCap = 10,
+        LowCPU = true,
+        Disable3DRendering = false,
+        ForceLowQuality = true,
+    },
+    Combat = {
+        Height = 26,
+        Radius = 32,
+        RotateSpeed = 6.2 / 4,
+        OrbitSmooth = 0.42,
+        DisableOrbit = true,
+        EnableNoclip = true,
+        ReturnReachDist = 4,
+        ReturnHoldTime = 0.20,
+        FlySpeedDivider = 4,
+        AttackBaseFlySpeed = 220,
+        ReturnBaseFlySpeed = 180,
+        MoveTweenMinTime = 0.08,
+        MoveTweenMaxTime = 0.80,
+        MoveTweenUpdateInterval = 0.03,
+        PinStickDistance = 28,
+        EnableReturnToLastPos = false,
+        MaxTweenStepDistance = 220,
+        WorldMinY = -50,
+        WorldMaxY = 3000,
+        WorldMaxAbsXZ = 25000,
+        SkillDelay = 0.45,
+        DashDelay = 0.75,
+        AttrDelay = 1,
+        QuestDelay = 5,
+        CompleteQuestDelay = 2,
+        RebirthDelay = 10,
+        CancelQuestDelay = 4,
+        NpcTweenTime = 2.0,
+        SkillIds = {1, 2, 4},
+    },
+    AutoSell = {
+        Enabled = true,
+        Interval = 60,
+    },
+    AutoSto = {
+        Enabled = true,
+        Interval = 2,
+    },
+    UI = {
+        Hide = false,
+    },
+}
+
+local RAW_CONFIG = {}
+if type(GLOBAL_ENV.PENNY_CONFIG) == "table" then
+    RAW_CONFIG = GLOBAL_ENV.PENNY_CONFIG
+end
+
+-- Legacy compatibility for previous external keys
+if type(GLOBAL_ENV.LowCPU) == "boolean" then
+    RAW_CONFIG.Performance = RAW_CONFIG.Performance or {}
+    RAW_CONFIG.Performance.LowCPU = GLOBAL_ENV.LowCPU
+end
+if type(GLOBAL_ENV.Hide_UI) == "boolean" then
+    RAW_CONFIG.UI = RAW_CONFIG.UI or {}
+    RAW_CONFIG.UI.Hide = GLOBAL_ENV.Hide_UI
+end
+
+local CONFIG = deepMerge(DEFAULT_CONFIG, RAW_CONFIG)
+GLOBAL_ENV.PENNY_CONFIG = CONFIG
+
 pcall(function()
     if setfpscap then
-        setfpscap(10)
+        setfpscap(tonumber(CONFIG.Performance.FpsCap) or 10)
     end
 end)
 
@@ -14,15 +122,25 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local Lighting = game:GetService("Lighting")
 local Terrain = workspace:FindFirstChildOfClass("Terrain")
 
-local STARTUP_DELAY = 2.5
+local STARTUP_DELAY = tonumber(CONFIG.General.StartupDelay) or 2.5
 task.wait(STARTUP_DELAY)
 
 local lp = Players.LocalPlayer
 local Msg = ReplicatedStorage:WaitForChild("Msg")
 
-local STRIP_MAP_GRAPHICS = true
-local DISABLE_3D_RENDERING = false -- set true if you want maximum performance (white screen)
-local FORCE_LOW_QUALITY_LEVEL = true
+-- Runtime guard: prevents old loops from previous executions from continuing.
+GLOBAL_ENV.__PENNY_RUNTIME = GLOBAL_ENV.__PENNY_RUNTIME or { run_id = 0 }
+GLOBAL_ENV.__PENNY_RUNTIME.run_id = (GLOBAL_ENV.__PENNY_RUNTIME.run_id or 0) + 1
+local THIS_RUN_ID = GLOBAL_ENV.__PENNY_RUNTIME.run_id
+
+local function isRunActive()
+    return GLOBAL_ENV.__PENNY_RUNTIME
+        and GLOBAL_ENV.__PENNY_RUNTIME.run_id == THIS_RUN_ID
+end
+
+local STRIP_MAP_GRAPHICS = CONFIG.Performance.LowCPU == true
+local DISABLE_3D_RENDERING = CONFIG.Performance.Disable3DRendering == true -- set true if you want maximum performance (white screen)
+local FORCE_LOW_QUALITY_LEVEL = CONFIG.Performance.ForceLowQuality == true
 
 local function stripVisualNode(obj)
     if obj:IsA("Decal")
@@ -127,37 +245,97 @@ local AttrRemote = Msg:WaitForChild("RemoteFunction"):WaitForChild("RemoteFuncti
 local TalkFunc = Msg:WaitForChild("Function"):WaitForChild("TalkFunc")
 
 -- SETTINGS
-local HEIGHT = 25
-local RADIUS = 32
-local ROTATE_SPEED = 6.2 / 4
-local ORBIT_SMOOTH = 0.42
-local DISABLE_ORBIT = true
-local ENABLE_NOCLIP = true
-local RETURN_REACH_DIST = 4
-local RETURN_HOLD_TIME = 0.20
-local FLY_SPEED_DIVIDER = 4
-local ATTACK_BASE_FLY_SPEED = 220
-local RETURN_BASE_FLY_SPEED = 180
-local MOVE_TWEEN_MIN_TIME = 0.08
-local MOVE_TWEEN_MAX_TIME = 0.80
-local MOVE_TWEEN_UPDATE_INTERVAL = 0.03
-local PIN_STICK_DISTANCE = 28
-local ENABLE_RETURN_TO_LAST_POS = false
-local MAX_TWEEN_STEP_DISTANCE = 220
-local WORLD_MIN_Y = -50
-local WORLD_MAX_Y = 3000
-local WORLD_MAX_ABS_XZ = 25000
+local HEIGHT = tonumber(CONFIG.Combat.Height) or 26
+local RADIUS = tonumber(CONFIG.Combat.Radius) or 32
+local ROTATE_SPEED = tonumber(CONFIG.Combat.RotateSpeed) or (6.2 / 4)
+local ORBIT_SMOOTH = tonumber(CONFIG.Combat.OrbitSmooth) or 0.42
+local DISABLE_ORBIT = CONFIG.Combat.DisableOrbit ~= false
+local ENABLE_NOCLIP = CONFIG.Combat.EnableNoclip ~= false
+local RETURN_REACH_DIST = tonumber(CONFIG.Combat.ReturnReachDist) or 4
+local RETURN_HOLD_TIME = tonumber(CONFIG.Combat.ReturnHoldTime) or 0.20
+local FLY_SPEED_DIVIDER = tonumber(CONFIG.Combat.FlySpeedDivider) or 4
+local ATTACK_BASE_FLY_SPEED = tonumber(CONFIG.Combat.AttackBaseFlySpeed) or 220
+local RETURN_BASE_FLY_SPEED = tonumber(CONFIG.Combat.ReturnBaseFlySpeed) or 180
+local MOVE_TWEEN_MIN_TIME = tonumber(CONFIG.Combat.MoveTweenMinTime) or 0.08
+local MOVE_TWEEN_MAX_TIME = tonumber(CONFIG.Combat.MoveTweenMaxTime) or 0.80
+local MOVE_TWEEN_UPDATE_INTERVAL = tonumber(CONFIG.Combat.MoveTweenUpdateInterval) or 0.03
+local PIN_STICK_DISTANCE = tonumber(CONFIG.Combat.PinStickDistance) or 28
+local ENABLE_RETURN_TO_LAST_POS = CONFIG.Combat.EnableReturnToLastPos == true
+local MAX_TWEEN_STEP_DISTANCE = tonumber(CONFIG.Combat.MaxTweenStepDistance) or 220
+local WORLD_MIN_Y = tonumber(CONFIG.Combat.WorldMinY) or -50
+local WORLD_MAX_Y = tonumber(CONFIG.Combat.WorldMaxY) or 3000
+local WORLD_MAX_ABS_XZ = tonumber(CONFIG.Combat.WorldMaxAbsXZ) or 25000
 
-local SKILL_DELAY = 0.45
-local DASH_DELAY = 0.75
-local ATTR_DELAY = 1
-local QUEST_DELAY = 5
-local COMPLETE_QUEST_DELAY = 2
-local REBIRTH_DELAY = 10
-local CANCEL_QUEST_DELAY = 4
+-- AUTO STO TOGGLE
+local AUTO_STO_SETTINGS = {
+    ENABLED = CONFIG.AutoSto.Enabled ~= false,   -- true = bat auto nang sto, false = tat
+    INTERVAL = tonumber(CONFIG.AutoSto.Interval) or 2, -- so giay moi lan auto nang
+}
+GLOBAL_ENV.PENNY_AUTO_STO = AUTO_STO_SETTINGS
 
-local NPC_TWEEN_TIME = 2.0
-local SKILL_IDS = {1, 2, 4}
+local function toBool(v, defaultValue)
+    if type(v) == "boolean" then
+        return v
+    end
+    if type(v) == "number" then
+        return v ~= 0
+    end
+    if type(v) == "string" then
+        local s = v:lower()
+        if s == "true" or s == "1" or s == "yes" or s == "on" then
+            return true
+        end
+        if s == "false" or s == "0" or s == "no" or s == "off" then
+            return false
+        end
+    end
+    return defaultValue
+end
+
+local function isAutoStoEnabled()
+    local cfgA = GLOBAL_ENV.PENNY_AUTO_STO
+    local cfgB = GLOBAL_ENV.PENNY_CONFIG and GLOBAL_ENV.PENNY_CONFIG.AutoSto
+
+    local aEnabled = true
+    if type(cfgA) == "table" and cfgA.ENABLED ~= nil then
+        aEnabled = toBool(cfgA.ENABLED, true)
+    end
+
+    local bEnabled = true
+    if type(cfgB) == "table" and cfgB.Enabled ~= nil then
+        bEnabled = toBool(cfgB.Enabled, true)
+    end
+
+    return aEnabled and bEnabled
+end
+
+local function getAutoStoInterval()
+    local cfgA = GLOBAL_ENV.PENNY_AUTO_STO
+    local cfgB = GLOBAL_ENV.PENNY_CONFIG and GLOBAL_ENV.PENNY_CONFIG.AutoSto
+
+    local n = nil
+    if type(cfgA) == "table" then
+        n = tonumber(cfgA.INTERVAL)
+    end
+    if type(cfgB) == "table" and cfgB.Interval ~= nil then
+        n = tonumber(cfgB.Interval)
+    end
+    if not n or n < 0.2 then
+        return 0.2
+    end
+    return n
+end
+
+local SKILL_DELAY = tonumber(CONFIG.Combat.SkillDelay) or 0.45
+local DASH_DELAY = tonumber(CONFIG.Combat.DashDelay) or 0.75
+local ATTR_DELAY = tonumber(CONFIG.Combat.AttrDelay) or 1
+local QUEST_DELAY = tonumber(CONFIG.Combat.QuestDelay) or 5
+local COMPLETE_QUEST_DELAY = tonumber(CONFIG.Combat.CompleteQuestDelay) or 2
+local REBIRTH_DELAY = tonumber(CONFIG.Combat.RebirthDelay) or 10
+local CANCEL_QUEST_DELAY = tonumber(CONFIG.Combat.CancelQuestDelay) or 4
+
+local NPC_TWEEN_TIME = tonumber(CONFIG.Combat.NpcTweenTime) or 2.0
+local SKILL_IDS = type(CONFIG.Combat.SkillIds) == "table" and CONFIG.Combat.SkillIds or {1, 2, 4}
 local QUEST6_NAME = "\228\187\187\229\138\1616"
 
 local currentTarget = nil
@@ -754,6 +932,10 @@ local function completeQuestByNPC(hrp)
 end
 
 RunService.Heartbeat:Connect(function(dt)
+    if not isRunActive() then
+        return
+    end
+
     if isBusy then
         return
     end
@@ -913,10 +1095,8 @@ end)
 --====================================================
 
 local AUTO_SELL_ENABLED = true
-local AUTO_SELL_INTERVAL = 60 -- seconds
-local MIN_GOLD_FOR_BAG_UPGRADE = 10000
-local AUTO_UPGRADE_STO_ENABLED = true
-local AUTO_UPGRADE_STO_INTERVAL = 2 -- seconds
+local AUTO_SELL_INTERVAL = tonumber(CONFIG.AutoSell.Interval) or 60 -- seconds
+AUTO_SELL_ENABLED = CONFIG.AutoSell.Enabled ~= false
 
 local SELL_ITEM_NAME = {
     ["LightShard"] = true,
@@ -1316,9 +1496,6 @@ end
 
 local function runAutoSellOnce()
     local ok, err = pcall(function()
-        as_upgradeBagCapacity()
-        task.wait(0.1)
-
         local MAX_SELL_RETRY = 3
         for attempt = 1, MAX_SELL_RETRY do
             if not as_openSellPopIfNeeded() then
@@ -1358,7 +1535,7 @@ end
 if AUTO_SELL_ENABLED then
     -- watchdog chạy độc lập: luôn check SellPop timeout
     task.spawn(function()
-        while true do
+        while isRunActive() do
             as_closeSellPopIfStuck()
             task.wait(1)
         end
@@ -1367,25 +1544,31 @@ if AUTO_SELL_ENABLED then
     -- vòng auto sell theo chu kỳ
     task.spawn(function()
         task.wait(5)
-        while true do
+        while isRunActive() do
             runAutoSellOnce()
             task.wait(AUTO_SELL_INTERVAL)
         end
     end)
 end
 
-if AUTO_UPGRADE_STO_ENABLED then
-    task.spawn(function()
-        task.wait(1)
-        while true do
+task.spawn(function()
+    task.wait(1)
+    while isRunActive() do
+        if isAutoStoEnabled() then
             -- call 2 quick times each cycle for reliability
             as_upgradeBagCapacity()
             task.wait(0.15)
-            as_upgradeBagCapacity()
-            task.wait(AUTO_UPGRADE_STO_INTERVAL)
+            if isAutoStoEnabled() then
+                as_upgradeBagCapacity()
+                task.wait(getAutoStoInterval())
+            else
+                task.wait(0.2)
+            end
+        else
+            task.wait(0.5)
         end
-    end)
-end
+    end
+end)
 
 
 
