@@ -227,24 +227,30 @@ local function tweenMoveTo(hrp, targetCF, baseFlySpeed, allowPinStick)
         return
     end
 
+    local now = tick()
+    local rawDist = (hrp.Position - targetCF.Position).Magnitude
+
+    -- Hard lock when near target to prevent gravity pull.
+    if allowPinStick and rawDist <= PIN_STICK_DISTANCE then
+        stopMoveTween()
+        hrp.CFrame = targetCF
+        pcall(function()
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end)
+        lastMoveUpdateAt = now
+        lastMoveTargetCF = targetCF
+        return
+    end
+
     targetCF = limitTargetCFStep(hrp.Position, targetCF, MAX_TWEEN_STEP_DISTANCE)
 
-    local now = tick()
     if now - lastMoveUpdateAt < MOVE_TWEEN_UPDATE_INTERVAL then
         return
     end
 
     local dist = (hrp.Position - targetCF.Position).Magnitude
     if dist < 0.3 then
-        return
-    end
-
-    -- Re-enable "ghim bay": once close enough to target, lock position directly.
-    if allowPinStick and dist <= PIN_STICK_DISTANCE then
-        stopMoveTween()
-        hrp.CFrame = targetCF
-        lastMoveUpdateAt = now
-        lastMoveTargetCF = targetCF
         return
     end
 
