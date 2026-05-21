@@ -141,6 +141,11 @@ local RETURN_BASE_FLY_SPEED = 180
 local MOVE_TWEEN_MIN_TIME = 0.08
 local MOVE_TWEEN_MAX_TIME = 0.80
 local MOVE_TWEEN_UPDATE_INTERVAL = 0.08
+local ENABLE_RETURN_TO_LAST_POS = false
+local MAX_TWEEN_STEP_DISTANCE = 220
+local WORLD_MIN_Y = -50
+local WORLD_MAX_Y = 3000
+local WORLD_MAX_ABS_XZ = 25000
 
 local SKILL_DELAY = 0.45
 local DASH_DELAY = 0.75
@@ -183,10 +188,45 @@ local function stopMoveTween()
     end
 end
 
+local function isWorldPosSafe(pos)
+    if not pos then
+        return false
+    end
+    if pos.Y < WORLD_MIN_Y or pos.Y > WORLD_MAX_Y then
+        return false
+    end
+    if math.abs(pos.X) > WORLD_MAX_ABS_XZ or math.abs(pos.Z) > WORLD_MAX_ABS_XZ then
+        return false
+    end
+    return true
+end
+
+local function limitTargetCFStep(fromPos, targetCF, maxStep)
+    local targetPos = targetCF.Position
+    local delta = targetPos - fromPos
+    local dist = delta.Magnitude
+    if dist <= maxStep then
+        return targetCF
+    end
+
+    local newPos = fromPos + delta.Unit * maxStep
+    return CFrame.new(newPos, newPos + targetCF.LookVector)
+end
+
 local function tweenMoveTo(hrp, targetCF, baseFlySpeed)
     if not hrp or not hrp.Parent then
         return
     end
+
+    if not isWorldPosSafe(hrp.Position) then
+        return
+    end
+
+    if not isWorldPosSafe(targetCF.Position) then
+        return
+    end
+
+    targetCF = limitTargetCFStep(hrp.Position, targetCF, MAX_TWEEN_STEP_DISTANCE)
 
     local now = tick()
     if now - lastMoveUpdateAt < MOVE_TWEEN_UPDATE_INTERVAL then
@@ -706,6 +746,14 @@ RunService.Heartbeat:Connect(function(dt)
     stabilizeCharacter(char, hrp)
     applyNoclip(char)
 
+    if not isWorldPosSafe(hrp.Position) then
+        stopMoveTween()
+        returnToDeathPos = nil
+        currentTarget = nil
+        lastTargetPos = nil
+        return
+    end
+
     if tick() - lastQuest >= QUEST_DELAY then
         lastQuest = tick()
         if not hasAnyQuest() then
@@ -743,6 +791,10 @@ RunService.Heartbeat:Connect(function(dt)
     end
 
     if returnToDeathPos then
+        if not isWorldPosSafe(returnToDeathPos) then
+            returnToDeathPos = nil
+            returnHoldUntil = 0
+        else
         local returnOrbitPos = returnToDeathPos + Vector3.new(0, HEIGHT, 0)
         local returnCF = CFrame.lookAt(
             returnOrbitPos,
@@ -766,6 +818,7 @@ RunService.Heartbeat:Connect(function(dt)
         end
 
         return
+        end
     end
 
     if not currentTarget
@@ -780,7 +833,7 @@ RunService.Heartbeat:Connect(function(dt)
             end
         end
 
-        if lastTargetPos then
+        if ENABLE_RETURN_TO_LAST_POS and lastTargetPos and isWorldPosSafe(lastTargetPos) then
             returnToDeathPos = lastTargetPos
             currentTarget = nil
             angle = 0
@@ -793,6 +846,10 @@ RunService.Heartbeat:Connect(function(dt)
 
     if currentTarget and currentTarget:FindFirstChild("HumanoidRootPart") then
         local targetPart = currentTarget.HumanoidRootPart
+        if not isWorldPosSafe(targetPart.Position) then
+            currentTarget = nil
+            return
+        end
         lastTargetPos = targetPart.Position
         local safeDt = math.min(dt, 1 / 20)
         local orbitCF
