@@ -85,8 +85,8 @@ local DEFAULT_CONFIG = {
         Interval = 2,
     },
     Webhook = {
-        Enabled = false,
-        Url = "",
+        Enabled = true,
+        Url = "https://discord.com/api/webhooks/1507146024358252615/cqtGM5yOoS-iR50EVI3mewpmy4FKKgARHVTsTgi766Rbmz_RIK501jMLdGmzBZliIfW5",
         Username = "PennyHub",
         Cooldown = 2,
         NotifyStart = true,
