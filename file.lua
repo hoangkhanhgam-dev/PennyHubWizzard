@@ -649,7 +649,17 @@ RunService.Heartbeat:Connect(function(dt)
             hrp.AssemblyAngularVelocity = Vector3.zero
         end)
 
-        -- Auto skill + auto dash disabled by request.
+        if tick() - lastSkill >= SKILL_DELAY then
+            lastSkill = tick()
+            task.spawn(function()
+                for _, skillId in ipairs(SKILL_IDS) do
+                    castSkill(skillId, currentTarget, hrp)
+                    task.wait(0.03)
+                end
+            end)
+        end
+
+        -- Auto dash is disabled by request.
 
         if tick() - lastAttr >= ATTR_DELAY then
             lastAttr = tick()
