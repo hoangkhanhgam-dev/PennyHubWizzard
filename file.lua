@@ -229,11 +229,14 @@ local function hasAnyQuest()
     return #taskFolder:GetChildren() > 0
 end
 
+local guiTextCache = ""
+local guiTextCacheAt = 0
+local GUI_TEXT_CACHE_TTL = 0.4
 local function getGuiTextAll()
     -- Cache GUI scan to reduce expensive full-descendant scans every tick.
     local now = tick()
-    if getGuiTextAll._cache and (now - (getGuiTextAll._cacheAt or 0) <= 0.4) then
-        return getGuiTextAll._cache
+    if guiTextCache ~= "" and (now - guiTextCacheAt <= GUI_TEXT_CACHE_TTL) then
+        return guiTextCache
     end
 
     local pg = lp:FindFirstChild("PlayerGui")
@@ -248,9 +251,9 @@ local function getGuiTextAll()
         end
     end
     all = string.lower(all)
-    getGuiTextAll._cache = all
-    getGuiTextAll._cacheAt = now
-    return all
+    guiTextCache = all
+    guiTextCacheAt = now
+    return guiTextCache
 end
 
 local function isDwarfKingQuest()
