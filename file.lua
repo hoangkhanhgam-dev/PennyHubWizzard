@@ -9,6 +9,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Lighting = game:GetService("Lighting")
 local Terrain = workspace:FindFirstChildOfClass("Terrain")
@@ -128,12 +129,18 @@ local TalkFunc = Msg:WaitForChild("Function"):WaitForChild("TalkFunc")
 -- SETTINGS
 local HEIGHT = 20
 local RADIUS = 32
-local ROTATE_SPEED = 6.2
+local ROTATE_SPEED = 6.2 / 4
 local ORBIT_SMOOTH = 0.42
 local DISABLE_ORBIT = true
 local ENABLE_NOCLIP = true
 local RETURN_REACH_DIST = 4
 local RETURN_HOLD_TIME = 0.20
+local FLY_SPEED_DIVIDER = 4
+local ATTACK_BASE_FLY_SPEED = 220
+local RETURN_BASE_FLY_SPEED = 180
+local MOVE_TWEEN_MIN_TIME = 0.08
+local MOVE_TWEEN_MAX_TIME = 0.80
+local MOVE_TWEEN_UPDATE_INTERVAL = 0.08
 
 local SKILL_DELAY = 0.45
 local DASH_DELAY = 0.75
@@ -163,6 +170,50 @@ local isBusy = false
 local lastTargetPos = nil
 local returnToDeathPos = nil
 local returnHoldUntil = 0
+local activeMoveTween = nil
+local lastMoveUpdateAt = 0
+local lastMoveTargetCF = nil
+
+local function stopMoveTween()
+    if activeMoveTween then
+        pcall(function()
+            activeMoveTween:Cancel()
+        end)
+        activeMoveTween = nil
+    end
+end
+
+local function tweenMoveTo(hrp, targetCF, baseFlySpeed)
+    if not hrp or not hrp.Parent then
+        return
+    end
+
+    local now = tick()
+    if now - lastMoveUpdateAt < MOVE_TWEEN_UPDATE_INTERVAL then
+        return
+    end
+
+    local dist = (hrp.Position - targetCF.Position).Magnitude
+    if dist < 0.3 then
+        return
+    end
+
+    if lastMoveTargetCF and (lastMoveTargetCF.Position - targetCF.Position).Magnitude < 0.2 then
+        return
+    end
+
+    lastMoveUpdateAt = now
+    lastMoveTargetCF = targetCF
+
+    local speed = math.max(baseFlySpeed / FLY_SPEED_DIVIDER, 1)
+    local duration = math.clamp(dist / speed, MOVE_TWEEN_MIN_TIME, MOVE_TWEEN_MAX_TIME)
+
+    stopMoveTween()
+
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    activeMoveTween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCF})
+    activeMoveTween:Play()
+end
 
 local function getChar()
     local char = lp.Character or lp.CharacterAdded:Wait()
@@ -627,13 +678,13 @@ local function completeQuestByNPC(hrp)
     currentTarget = nil
 
     local targetCF = npcHRP.CFrame * CFrame.new(0, 0, -5)
-    local t0 = tick()
-    local from = hrp.CFrame
-    while tick() - t0 < NPC_TWEEN_TIME do
-        local a = (tick() - t0) / NPC_TWEEN_TIME
-        hrp.CFrame = from:Lerp(targetCF, a)
-        RunService.Heartbeat:Wait()
-    end
+    stopMoveTween()
+    local tweenInfo = TweenInfo.new(NPC_TWEEN_TIME * FLY_SPEED_DIVIDER, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local toNpcTween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCF})
+    toNpcTween:Play()
+    pcall(function()
+        toNpcTween.Completed:Wait()
+    end)
     hrp.CFrame = targetCF
 
     task.wait(0.4)
@@ -692,14 +743,12 @@ RunService.Heartbeat:Connect(function(dt)
     end
 
     if returnToDeathPos then
-        local safeDt = math.min(dt, 1 / 20)
         local returnOrbitPos = returnToDeathPos + Vector3.new(0, HEIGHT, 0)
         local returnCF = CFrame.lookAt(
             returnOrbitPos,
             returnToDeathPos
         )
-        local alpha = 1 - math.exp(-ORBIT_SMOOTH * 60 * safeDt)
-        hrp.CFrame = hrp.CFrame:Lerp(returnCF, alpha)
+        tweenMoveTo(hrp, returnCF, RETURN_BASE_FLY_SPEED)
 
         local dist = (hrp.Position - returnOrbitPos).Magnitude
         if dist <= RETURN_REACH_DIST then
@@ -760,8 +809,7 @@ RunService.Heartbeat:Connect(function(dt)
             orbitCF = CFrame.lookAt(orbitPos, targetPart.Position)
         end
 
-        local alpha = 1 - math.exp(-ORBIT_SMOOTH * 60 * safeDt)
-        hrp.CFrame = hrp.CFrame:Lerp(orbitCF, alpha)
+        tweenMoveTo(hrp, orbitCF, ATTACK_BASE_FLY_SPEED)
 
         pcall(function()
             hrp.AssemblyLinearVelocity = Vector3.zero
