@@ -140,7 +140,8 @@ local ATTACK_BASE_FLY_SPEED = 220
 local RETURN_BASE_FLY_SPEED = 180
 local MOVE_TWEEN_MIN_TIME = 0.08
 local MOVE_TWEEN_MAX_TIME = 0.80
-local MOVE_TWEEN_UPDATE_INTERVAL = 0.08
+local MOVE_TWEEN_UPDATE_INTERVAL = 0.03
+local PIN_STICK_DISTANCE = 28
 local ENABLE_RETURN_TO_LAST_POS = false
 local MAX_TWEEN_STEP_DISTANCE = 220
 local WORLD_MIN_Y = -50
@@ -213,7 +214,7 @@ local function limitTargetCFStep(fromPos, targetCF, maxStep)
     return CFrame.new(newPos, newPos + targetCF.LookVector)
 end
 
-local function tweenMoveTo(hrp, targetCF, baseFlySpeed)
+local function tweenMoveTo(hrp, targetCF, baseFlySpeed, allowPinStick)
     if not hrp or not hrp.Parent then
         return
     end
@@ -235,6 +236,15 @@ local function tweenMoveTo(hrp, targetCF, baseFlySpeed)
 
     local dist = (hrp.Position - targetCF.Position).Magnitude
     if dist < 0.3 then
+        return
+    end
+
+    -- Re-enable "ghim bay": once close enough to target, lock position directly.
+    if allowPinStick and dist <= PIN_STICK_DISTANCE then
+        stopMoveTween()
+        hrp.CFrame = targetCF
+        lastMoveUpdateAt = now
+        lastMoveTargetCF = targetCF
         return
     end
 
@@ -800,7 +810,7 @@ RunService.Heartbeat:Connect(function(dt)
             returnOrbitPos,
             returnToDeathPos
         )
-        tweenMoveTo(hrp, returnCF, RETURN_BASE_FLY_SPEED)
+        tweenMoveTo(hrp, returnCF, RETURN_BASE_FLY_SPEED, false)
 
         local dist = (hrp.Position - returnOrbitPos).Magnitude
         if dist <= RETURN_REACH_DIST then
@@ -866,7 +876,7 @@ RunService.Heartbeat:Connect(function(dt)
             orbitCF = CFrame.lookAt(orbitPos, targetPart.Position)
         end
 
-        tweenMoveTo(hrp, orbitCF, ATTACK_BASE_FLY_SPEED)
+        tweenMoveTo(hrp, orbitCF, ATTACK_BASE_FLY_SPEED, true)
 
         pcall(function()
             hrp.AssemblyLinearVelocity = Vector3.zero
