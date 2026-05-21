@@ -127,7 +127,7 @@ local AttrRemote = Msg:WaitForChild("RemoteFunction"):WaitForChild("RemoteFuncti
 local TalkFunc = Msg:WaitForChild("Function"):WaitForChild("TalkFunc")
 
 -- SETTINGS
-local HEIGHT = 20
+local HEIGHT = 30
 local RADIUS = 32
 local ROTATE_SPEED = 6.2 / 4
 local ORBIT_SMOOTH = 0.42
