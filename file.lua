@@ -54,12 +54,13 @@ local DEFAULT_CONFIG = {
         EnableNoclip = true,
         ReturnReachDist = 4,
         ReturnHoldTime = 0.20,
-        FlySpeedDivider = 4,
-        FlySpeedMultiplier = 0.5, -- 1 = normal speed, 0.5 = half speed
+        TweenSpeed = 7, -- direct tween speed (studs/sec). lower = slower
+        FlySpeedDivider = 4, -- legacy
+        FlySpeedMultiplier = 0.25, -- legacy
         AttackBaseFlySpeed = 220,
         ReturnBaseFlySpeed = 180,
         MoveTweenMinTime = 0.08,
-        MoveTweenMaxTime = 0.80,
+        MoveTweenMaxTime = 3.00,
         MoveTweenUpdateInterval = 0.03,
         PinStickDistance = 28,
         EnableReturnToLastPos = false,
@@ -437,8 +438,9 @@ local DISABLE_ORBIT = CONFIG.Combat.DisableOrbit ~= false
 local ENABLE_NOCLIP = CONFIG.Combat.EnableNoclip ~= false
 local RETURN_REACH_DIST = tonumber(CONFIG.Combat.ReturnReachDist) or 4
 local RETURN_HOLD_TIME = tonumber(CONFIG.Combat.ReturnHoldTime) or 0.20
-local FLY_SPEED_DIVIDER = tonumber(CONFIG.Combat.FlySpeedDivider) or 4
-local FLY_SPEED_MULTIPLIER = math.clamp(tonumber(CONFIG.Combat.FlySpeedMultiplier) or 0.5, 0.05, 5)
+local FLY_SPEED_DIVIDER = tonumber(CONFIG.Combat.FlySpeedDivider) or 4 -- legacy
+local FLY_SPEED_MULTIPLIER = math.clamp(tonumber(CONFIG.Combat.FlySpeedMultiplier) or 0.25, 0.05, 5) -- legacy
+local DIRECT_TWEEN_SPEED = tonumber(CONFIG.Combat.TweenSpeed)
 local ATTACK_BASE_FLY_SPEED = tonumber(CONFIG.Combat.AttackBaseFlySpeed) or 220
 local RETURN_BASE_FLY_SPEED = tonumber(CONFIG.Combat.ReturnBaseFlySpeed) or 180
 local MOVE_TWEEN_MIN_TIME = tonumber(CONFIG.Combat.MoveTweenMinTime) or 0.08
@@ -729,7 +731,14 @@ local function tweenMoveTo(hrp, targetCF, baseFlySpeed, allowPinStick)
     lastMoveUpdateAt = now
     lastMoveTargetCF = targetCF
 
-    local speed = math.max((baseFlySpeed / FLY_SPEED_DIVIDER) * FLY_SPEED_MULTIPLIER, 1)
+    local speed
+    if DIRECT_TWEEN_SPEED and DIRECT_TWEEN_SPEED > 0 then
+        speed = DIRECT_TWEEN_SPEED
+    else
+        -- fallback for older configs
+        speed = (baseFlySpeed / FLY_SPEED_DIVIDER) * FLY_SPEED_MULTIPLIER
+    end
+    speed = math.max(speed, 1)
     local duration = math.clamp(dist / speed, MOVE_TWEEN_MIN_TIME, MOVE_TWEEN_MAX_TIME)
 
     stopMoveTween()
