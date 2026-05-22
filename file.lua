@@ -445,8 +445,9 @@ local DIRECT_TWEEN_SPEED = tonumber(CONFIG.Combat.TweenSpeed)
 local ATTACK_BASE_FLY_SPEED = tonumber(CONFIG.Combat.AttackBaseFlySpeed) or 220
 local RETURN_BASE_FLY_SPEED = tonumber(CONFIG.Combat.ReturnBaseFlySpeed) or 180
 local MOVE_TWEEN_MIN_TIME = tonumber(CONFIG.Combat.MoveTweenMinTime) or 0.08
-local MOVE_TWEEN_MAX_TIME = tonumber(CONFIG.Combat.MoveTweenMaxTime) or 0.80
+local MOVE_TWEEN_MAX_TIME = tonumber(CONFIG.Combat.MoveTweenMaxTime) or 3.00
 local MOVE_TWEEN_UPDATE_INTERVAL = tonumber(CONFIG.Combat.MoveTweenUpdateInterval) or 0.03
+local PIN_STICK_ENABLED = CONFIG.Combat.PinStickEnabled == true
 local PIN_STICK_DISTANCE = tonumber(CONFIG.Combat.PinStickDistance) or 28
 local ENABLE_RETURN_TO_LAST_POS = CONFIG.Combat.EnableReturnToLastPos == true
 local MAX_TWEEN_STEP_DISTANCE = tonumber(CONFIG.Combat.MaxTweenStepDistance) or 220
@@ -702,7 +703,7 @@ local function tweenMoveTo(hrp, targetCF, baseFlySpeed, allowPinStick)
     local rawDist = (hrp.Position - targetCF.Position).Magnitude
 
     -- Hard lock when near target to prevent gravity pull.
-    if allowPinStick and rawDist <= PIN_STICK_DISTANCE then
+    if PIN_STICK_ENABLED and allowPinStick and rawDist <= PIN_STICK_DISTANCE then
         stopMoveTween()
         hrp.CFrame = targetCF
         pcall(function()
