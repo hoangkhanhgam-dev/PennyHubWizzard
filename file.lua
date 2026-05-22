@@ -52,6 +52,7 @@ local DEFAULT_CONFIG = {
         OrbitSmooth = 0.42,
         DisableOrbit = true,
         NoOrbitDistance = 0,
+        SpeedBoost = 1.0, -- >1 faster, <1 slower
         HeadStrafeEnabled = true,
         HeadStrafeRadius = 3.5,
         HeadStrafeSpeed = 3.2,
@@ -505,14 +506,24 @@ local function resolveMovementSpeed(baseFlySpeed)
         runtime.TweenSpeed,
         runtime.TwenSpeed,
         runtime.Tween_Speed,
-        DEFAULT_DIRECT_TWEEN_SPEED,
         GLOBAL_ENV.PENNY_TWEEN_SPEED,
         GLOBAL_ENV.TWEEN_SPEED,
         GLOBAL_ENV.TweenSpeed,
-        GLOBAL_ENV.TwenSpeed
+        GLOBAL_ENV.TwenSpeed,
+        DEFAULT_DIRECT_TWEEN_SPEED
     )
+    local speedBoost = firstNumber(
+        runtime.SpeedBoost,
+        runtime.SpeedScale,
+        runtime.TweenSpeedBoost,
+        GLOBAL_ENV.PENNY_SPEED_BOOST,
+        GLOBAL_ENV.SPEED_BOOST,
+        1
+    ) or 1
+    speedBoost = math.clamp(speedBoost, 0.05, 50)
+
     if direct and direct > 0 then
-        return math.max(direct, 0.2), "direct"
+        return math.max(direct * speedBoost, 0.2), "direct"
     end
 
     -- Legacy formula path.
@@ -527,7 +538,7 @@ local function resolveMovementSpeed(baseFlySpeed)
     ) or DEFAULT_FLY_SPEED_MULTIPLIER
     multiplier = math.clamp(multiplier, 0.01, 10)
 
-    local speed = (baseFlySpeed / divider) * multiplier
+    local speed = ((baseFlySpeed / divider) * multiplier) * speedBoost
     return math.max(speed, 0.2), "legacy"
 end
 
@@ -562,10 +573,20 @@ local function resolveTweenTiming()
 end
 
 local __initSpeed, __initMode = resolveMovementSpeed(ATTACK_BASE_FLY_SPEED)
+local __runtimeCombat = getRuntimeCombatConfig()
+local __initBoost = firstNumber(
+    __runtimeCombat.SpeedBoost,
+    __runtimeCombat.SpeedScale,
+    __runtimeCombat.TweenSpeedBoost,
+    GLOBAL_ENV.PENNY_SPEED_BOOST,
+    GLOBAL_ENV.SPEED_BOOST,
+    1
+) or 1
 print(string.format(
-    "[PennyHub] Combat config: Height=%.2f | NoOrbitDistance=%.2f | TweenSpeedRaw=%s | FlyDividerRaw=%.2f | FlyMultRaw=%.2f | MoveSpeed=%.2f (%s)",
+    "[PennyHub] Combat config: Height=%.2f | NoOrbitDistance=%.2f | SpeedBoost=%.2f | TweenSpeedRaw=%s | FlyDividerRaw=%.2f | FlyMultRaw=%.2f | MoveSpeed=%.2f (%s)",
     HEIGHT,
     NO_ORBIT_DISTANCE,
+    __initBoost,
     tostring(DEFAULT_DIRECT_TWEEN_SPEED),
     DEFAULT_FLY_SPEED_DIVIDER,
     DEFAULT_FLY_SPEED_MULTIPLIER,
@@ -1329,7 +1350,11 @@ local function completeQuestByNPC(hrp)
 
     local targetCF = npcHRP.CFrame * CFrame.new(0, 0, -5)
     stopMoveTween()
-    local tweenInfo = TweenInfo.new(NPC_TWEEN_TIME * resolveFlyDivider(), Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local npcDist = (hrp.Position - targetCF.Position).Magnitude
+    local npcSpeed = resolveMovementSpeed(RETURN_BASE_FLY_SPEED)
+    local minTweenTime, maxTweenTime = resolveTweenTiming()
+    local npcDuration = math.clamp(npcDist / npcSpeed, minTweenTime, math.max(maxTweenTime, 0.25))
+    local tweenInfo = TweenInfo.new(npcDuration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     local toNpcTween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCF})
     toNpcTween:Play()
     pcall(function()
@@ -2063,15 +2088,3 @@ task.spawn(function()
         end
     end
 end)
-
-
-
-
-
-
-
-
-
-
-
-
