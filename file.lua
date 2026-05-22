@@ -447,14 +447,14 @@ local HEAD_STRAFE_SPEED = math.max(tonumber(CONFIG.Combat.HeadStrafeSpeed) or 3.
 local ENABLE_NOCLIP = CONFIG.Combat.EnableNoclip ~= false
 local RETURN_REACH_DIST = tonumber(CONFIG.Combat.ReturnReachDist) or 4
 local RETURN_HOLD_TIME = tonumber(CONFIG.Combat.ReturnHoldTime) or 0.20
-local FLY_SPEED_DIVIDER = tonumber(CONFIG.Combat.FlySpeedDivider) or 4 -- legacy
-local FLY_SPEED_MULTIPLIER = math.clamp(tonumber(CONFIG.Combat.FlySpeedMultiplier) or 0.25, 0.05, 5) -- legacy
-local DIRECT_TWEEN_SPEED = tonumber(CONFIG.Combat.TweenSpeed)
+local DEFAULT_FLY_SPEED_DIVIDER = tonumber(CONFIG.Combat.FlySpeedDivider) or 4 -- legacy
+local DEFAULT_FLY_SPEED_MULTIPLIER = math.clamp(tonumber(CONFIG.Combat.FlySpeedMultiplier) or 0.25, 0.01, 10) -- legacy
+local DEFAULT_DIRECT_TWEEN_SPEED = tonumber(CONFIG.Combat.TweenSpeed) or tonumber(CONFIG.Combat.TwenSpeed)
 local ATTACK_BASE_FLY_SPEED = tonumber(CONFIG.Combat.AttackBaseFlySpeed) or 220
 local RETURN_BASE_FLY_SPEED = tonumber(CONFIG.Combat.ReturnBaseFlySpeed) or 180
-local MOVE_TWEEN_MIN_TIME = tonumber(CONFIG.Combat.MoveTweenMinTime) or 0.08
-local MOVE_TWEEN_MAX_TIME = tonumber(CONFIG.Combat.MoveTweenMaxTime) or 3.00
-local MOVE_TWEEN_UPDATE_INTERVAL = tonumber(CONFIG.Combat.MoveTweenUpdateInterval) or 0.03
+local DEFAULT_MOVE_TWEEN_MIN_TIME = tonumber(CONFIG.Combat.MoveTweenMinTime) or 0.08
+local DEFAULT_MOVE_TWEEN_MAX_TIME = tonumber(CONFIG.Combat.MoveTweenMaxTime) or 3.00
+local DEFAULT_MOVE_TWEEN_UPDATE_INTERVAL = tonumber(CONFIG.Combat.MoveTweenUpdateInterval) or 0.03
 local PIN_STICK_ENABLED = CONFIG.Combat.PinStickEnabled == true
 local PIN_STICK_DISTANCE = tonumber(CONFIG.Combat.PinStickDistance) or 28
 local ENABLE_RETURN_TO_LAST_POS = CONFIG.Combat.EnableReturnToLastPos == true
@@ -463,13 +463,114 @@ local WORLD_MIN_Y = tonumber(CONFIG.Combat.WorldMinY) or -50
 local WORLD_MAX_Y = tonumber(CONFIG.Combat.WorldMaxY) or 3000
 local WORLD_MAX_ABS_XZ = tonumber(CONFIG.Combat.WorldMaxAbsXZ) or 25000
 
+local function firstNumber(...)
+    for i = 1, select("#", ...) do
+        local n = tonumber(select(i, ...))
+        if n ~= nil then
+            return n
+        end
+    end
+    return nil
+end
+
+local function getRuntimeCombatConfig()
+    local cfg = GLOBAL_ENV.PENNY_CONFIG
+    if type(cfg) == "table" and type(cfg.Combat) == "table" then
+        return cfg.Combat
+    end
+    return CONFIG.Combat or {}
+end
+
+local function resolveFlyDivider()
+    local runtime = getRuntimeCombatConfig()
+    local divider = firstNumber(
+        runtime.FlySpeedDivider,
+        runtime.FlyDivider,
+        GLOBAL_ENV.PENNY_FLY_SPEED_DIVIDER,
+        GLOBAL_ENV.FLY_SPEED_DIVIDER,
+        DEFAULT_FLY_SPEED_DIVIDER
+    ) or DEFAULT_FLY_SPEED_DIVIDER
+    if divider < 0.05 then
+        divider = 0.05
+    end
+    return divider
+end
+
+local function resolveMovementSpeed(baseFlySpeed)
+    local runtime = getRuntimeCombatConfig()
+
+    -- External config compatibility:
+    -- Combat.TweenSpeed / Combat.TwenSpeed / global PENNY_TWEEN_SPEED / TWEEN_SPEED
+    local direct = firstNumber(
+        runtime.TweenSpeed,
+        runtime.TwenSpeed,
+        runtime.Tween_Speed,
+        DEFAULT_DIRECT_TWEEN_SPEED,
+        GLOBAL_ENV.PENNY_TWEEN_SPEED,
+        GLOBAL_ENV.TWEEN_SPEED,
+        GLOBAL_ENV.TweenSpeed,
+        GLOBAL_ENV.TwenSpeed
+    )
+    if direct and direct > 0 then
+        return math.max(direct, 0.2), "direct"
+    end
+
+    -- Legacy formula path.
+    local divider = resolveFlyDivider()
+
+    local multiplier = firstNumber(
+        runtime.FlySpeedMultiplier,
+        runtime.FlyMultiplier,
+        GLOBAL_ENV.PENNY_FLY_SPEED_MULTIPLIER,
+        GLOBAL_ENV.FLY_SPEED_MULTIPLIER,
+        DEFAULT_FLY_SPEED_MULTIPLIER
+    ) or DEFAULT_FLY_SPEED_MULTIPLIER
+    multiplier = math.clamp(multiplier, 0.01, 10)
+
+    local speed = (baseFlySpeed / divider) * multiplier
+    return math.max(speed, 0.2), "legacy"
+end
+
+local function resolveTweenTiming()
+    local runtime = getRuntimeCombatConfig()
+    local minTime = firstNumber(
+        runtime.MoveTweenMinTime,
+        runtime.MinTweenTime,
+        runtime.TweenMinTime,
+        GLOBAL_ENV.PENNY_TWEEN_MIN_TIME,
+        DEFAULT_MOVE_TWEEN_MIN_TIME
+    ) or DEFAULT_MOVE_TWEEN_MIN_TIME
+    local maxTime = firstNumber(
+        runtime.MoveTweenMaxTime,
+        runtime.MaxTweenTime,
+        runtime.TweenMaxTime,
+        GLOBAL_ENV.PENNY_TWEEN_MAX_TIME,
+        DEFAULT_MOVE_TWEEN_MAX_TIME
+    ) or DEFAULT_MOVE_TWEEN_MAX_TIME
+    local updateInterval = firstNumber(
+        runtime.MoveTweenUpdateInterval,
+        runtime.TweenUpdateInterval,
+        GLOBAL_ENV.PENNY_TWEEN_UPDATE_INTERVAL,
+        DEFAULT_MOVE_TWEEN_UPDATE_INTERVAL
+    ) or DEFAULT_MOVE_TWEEN_UPDATE_INTERVAL
+
+    minTime = math.clamp(minTime, 0.01, 10)
+    maxTime = math.clamp(maxTime, minTime, 20)
+    updateInterval = math.clamp(updateInterval, 0.005, 0.5)
+
+    return minTime, maxTime, updateInterval
+end
+
+local __initSpeed, __initMode = resolveMovementSpeed(ATTACK_BASE_FLY_SPEED)
 print(string.format(
-    "[PennyHub] Combat config: Height=%.2f | NoOrbitDistance=%.2f | TweenSpeed=%s | FlySpeedDivider=%.2f | FlySpeedMultiplier=%.2f",
+    "[PennyHub] Combat config: Height=%.2f | NoOrbitDistance=%.2f | TweenSpeedRaw=%s | FlyDividerRaw=%.2f | FlyMultRaw=%.2f | MoveSpeed=%.2f (%s)",
     HEIGHT,
     NO_ORBIT_DISTANCE,
-    tostring(DIRECT_TWEEN_SPEED),
-    FLY_SPEED_DIVIDER,
-    FLY_SPEED_MULTIPLIER
+    tostring(DEFAULT_DIRECT_TWEEN_SPEED),
+    DEFAULT_FLY_SPEED_DIVIDER,
+    DEFAULT_FLY_SPEED_MULTIPLIER,
+    __initSpeed,
+    tostring(__initMode)
 ))
 
 -- AUTO STO TOGGLE
@@ -734,7 +835,9 @@ local function tweenMoveTo(hrp, targetCF, baseFlySpeed, allowPinStick)
 
     targetCF = limitTargetCFStep(hrp.Position, targetCF, MAX_TWEEN_STEP_DISTANCE)
 
-    if now - lastMoveUpdateAt < MOVE_TWEEN_UPDATE_INTERVAL then
+    local minTweenTime, maxTweenTime, moveUpdateInterval = resolveTweenTiming()
+
+    if now - lastMoveUpdateAt < moveUpdateInterval then
         return
     end
 
@@ -750,15 +853,8 @@ local function tweenMoveTo(hrp, targetCF, baseFlySpeed, allowPinStick)
     lastMoveUpdateAt = now
     lastMoveTargetCF = targetCF
 
-    local speed
-    if DIRECT_TWEEN_SPEED and DIRECT_TWEEN_SPEED > 0 then
-        speed = DIRECT_TWEEN_SPEED
-    else
-        -- fallback for older configs
-        speed = (baseFlySpeed / FLY_SPEED_DIVIDER) * FLY_SPEED_MULTIPLIER
-    end
-    speed = math.max(speed, 1)
-    local duration = math.clamp(dist / speed, MOVE_TWEEN_MIN_TIME, MOVE_TWEEN_MAX_TIME)
+    local speed = resolveMovementSpeed(baseFlySpeed)
+    local duration = math.clamp(dist / speed, minTweenTime, maxTweenTime)
 
     stopMoveTween()
 
@@ -933,23 +1029,26 @@ local function isKingDwarf(model)
         return false
     end
 
-    local hand = model:FindFirstChild("å½“å‰æ‰‹æŒ")
-    if not hand then
-        return false
+    local modelName = string.lower(tostring(model.Name or ""))
+    if modelName:find("dwarf king")
+        or modelName:find("king dwarf")
+        or (modelName:find("king") and modelName:find("dwarf")) then
+        return true
     end
 
-    return descendantNameHas(hand, "çŸ®äººçš„æˆ˜é”¤")
-        or descendantNameHas(hand, "æˆ˜é”¤")
-        or descendantNameHas(hand, "æ ¸å¿ƒ2")
-        or descendantNameHas(hand, "å²©æµ†")
-        or descendantNameHas(hand, "8347")
-        or descendantNameHas(hand, "8350")
-        or descendantNameHas(hand, "8351")
-        or descendantNameHas(hand, "Box40013")
-        or descendantNameHas(hand, "Box40015")
-        or descendantNameHas(hand, "Ham01")
-        or descendantNameHas(hand, "Plane007")
-        or descendantNameHas(hand, "Plane010")
+    -- Robust fallback: detect by stable asset markers on king weapon.
+    if descendantNameHas(model, "8347")
+        or descendantNameHas(model, "8350")
+        or descendantNameHas(model, "8351")
+        or descendantNameHas(model, "Box40013")
+        or descendantNameHas(model, "Box40015")
+        or descendantNameHas(model, "Ham01")
+        or descendantNameHas(model, "Plane007")
+        or descendantNameHas(model, "Plane010") then
+        return true
+    end
+
+    return false
 end
 
 local function isArcherGoblin(model)
@@ -968,12 +1067,18 @@ local function isArcherGoblin(model)
         return false
     end
 
+    local lowerName = string.lower(tostring(model.Name or ""))
+    if lowerName:find("archer") or lowerName:find("ranger") then
+        return true
+    end
+
     for _, v in ipairs(leftArm:GetChildren()) do
         local n = tostring(v.Name)
-        if n:find("å¯¹è±¡241") or n:find("å¯¹è±¡220") or n:find("Handle008") then
+        if n:find("Handle008") or n:lower():find("bow") then
             return true
         end
     end
+
     return false
 end
 
@@ -985,41 +1090,24 @@ local function isWarhammerDwarf(model)
     local modelName = string.lower(tostring(model.Name or ""))
     if modelName:find("warhammer")
         or modelName:find("hammer")
-        or modelName:find("æˆ˜é”¤")
-        or modelName:find("çŸ®äºº") then
+        or (modelName:find("dwarf") and modelName:find("war")) then
         if not isArcherGoblin(model) then
             return true
         end
     end
 
-    local hand = model:FindFirstChild("å½“å‰æ‰‹æŒ")
-    if not hand then
-        -- Fallback: some NPC variants may not expose å½“å‰æ‰‹æŒ
-        if descendantNameHas(model, "æˆ˜é”¤")
-            or descendantNameHas(model, "Hammer")
-            or descendantNameHas(model, "ham")
-            or descendantNameHas(model, "é”¤") then
-            return not isArcherGoblin(model)
-        end
-        return false
-    end
-
     local hasDwarfWeapon =
-        descendantNameHas(hand, "çŸ®äºº")
-        or descendantNameHas(hand, "æˆ˜æ–§")
-        or descendantNameHas(hand, "é”¤")
-        or descendantNameHas(hand, "æ¡æŠŠ")
-        or descendantNameHas(hand, "æ ¸å¿ƒ")
+        descendantNameHas(model, "Hammer")
+        or descendantNameHas(model, "ham")
+        or descendantNameHas(model, "Box40013")
+        or descendantNameHas(model, "Box40015")
+        or descendantNameHas(model, "Ham01")
 
-    if not hasDwarfWeapon then
-        return false
+    if hasDwarfWeapon and not isArcherGoblin(model) then
+        return true
     end
 
-    if isArcherGoblin(model) then
-        return false
-    end
-
-    return true
+    return false
 end
 
 local function isPickaxeDwarf(model)
@@ -1027,26 +1115,18 @@ local function isPickaxeDwarf(model)
         return false
     end
 
-    local hand = model:FindFirstChild("å½“å‰æ‰‹æŒ")
-    if not hand then
-        return false
-    end
-
     local hasPickaxeWeapon =
-        descendantNameHas(hand, "é•")
-        or descendantNameHas(hand, "ç¨¿")
-        or descendantNameHas(hand, "çŸ¿")
-        or descendantNameHas(hand, "Pick")
-        or descendantNameHas(hand, "pick")
-        or descendantNameHas(hand, "NGon")
-        or descendantNameHas(hand, "83410012")
-        or descendantNameHas(hand, "8341")
+        descendantNameHas(model, "Pick")
+        or descendantNameHas(model, "pick")
+        or descendantNameHas(model, "NGon")
+        or descendantNameHas(model, "83410012")
+        or descendantNameHas(model, "8341")
 
     if not hasPickaxeWeapon then
         return false
     end
 
-    if isArcherGoblin(model) or isWarhammerDwarf(model) then
+    if isArcherGoblin(model) or isWarhammerDwarf(model) or isKingDwarf(model) then
         return false
     end
 
@@ -1249,7 +1329,7 @@ local function completeQuestByNPC(hrp)
 
     local targetCF = npcHRP.CFrame * CFrame.new(0, 0, -5)
     stopMoveTween()
-    local tweenInfo = TweenInfo.new(NPC_TWEEN_TIME * FLY_SPEED_DIVIDER, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local tweenInfo = TweenInfo.new(NPC_TWEEN_TIME * resolveFlyDivider(), Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     local toNpcTween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCF})
     toNpcTween:Play()
     pcall(function()
@@ -1682,7 +1762,7 @@ local function as_closeBlockingPopups()
         end
     end
 
-    -- Æ°u tiÃªn popup hay cháº·n: Event/Notice/Announcement
+    -- Ã†Â°u tiÃƒÂªn popup hay chÃ¡ÂºÂ·n: Event/Notice/Announcement
     for _, gui in ipairs(pg:GetChildren()) do
         if gui:IsA("ScreenGui") and gui.Enabled ~= false then
             local nm = tostring(gui.Name):lower()
@@ -1692,7 +1772,7 @@ local function as_closeBlockingPopups()
         end
     end
 
-    -- quÃ©t rá»™ng thÃªm 1 lÆ°á»£t
+    -- quÃƒÂ©t rÃ¡Â»â„¢ng thÃƒÂªm 1 lÃ†Â°Ã¡Â»Â£t
     tryClickClose(pg)
 end
 local function as_isSellPopOpen()
@@ -1823,7 +1903,7 @@ local function as_confirmSell()
     local sellAll = as_getSellAll()
     local finalCount = 0
 
-    -- step 1 (confirm thứ 1): dung dung block click ban dua, goi ngay sau khi select xong
+    -- step 1 (confirm thá»© 1): dung dung block click ban dua, goi ngay sau khi select xong
     as_closeBlockingPopups()
     local sellBtn = sellPop.ContentClip.Bottom._Btns2._SellBtn.Btn
     local function clickSellBtnExact()
@@ -1854,14 +1934,14 @@ local function as_confirmSell()
     clickSellBtnExact()
     task.wait(0.15)
 
-    -- đã mở bước confirm đầu, giờ mới unselect exclude trong SellAll
+    -- Ä‘Ã£ má»Ÿ bÆ°á»›c confirm Ä‘áº§u, giá» má»›i unselect exclude trong SellAll
     if sellAll.Visible then
         as_unselectExcludedInSellAll()
         task.wait(0.1)
         finalCount = as_countSellAllItems()
     end
 
-    -- step 2 (confirm thứ 2): bấm OK 1 lần
+    -- step 2 (confirm thá»© 2): báº¥m OK 1 láº§n
     if sellAll.Visible then
         local okBtn = sellAll.ContentClip.Frame.Btns._OkBtn.Btn
         as_closeBlockingPopups()
@@ -1906,7 +1986,7 @@ local function runAutoSellOnce()
                 break
             end
 
-            -- confirm fail: đóng popup và thử lại vòng mới
+            -- confirm fail: Ä‘Ã³ng popup vÃ  thá»­ láº¡i vÃ²ng má»›i
             local sp = as_getSellPop()
             if sp.Visible then
                 as_clickGui(sp.ContentClip.Top._Exit.Button)
@@ -1935,7 +2015,7 @@ local function runAutoSellOnce()
 end
 
 if AUTO_SELL_ENABLED then
-    -- watchdog chạy độc lập: luôn check SellPop timeout
+    -- watchdog cháº¡y Ä‘á»™c láº­p: luÃ´n check SellPop timeout
     task.spawn(function()
         while isRunActive() do
             as_closeSellPopIfStuck()
@@ -1943,7 +2023,7 @@ if AUTO_SELL_ENABLED then
         end
     end)
 
-    -- vòng auto sell theo chu kỳ
+    -- vÃ²ng auto sell theo chu ká»³
     task.spawn(function()
         task.wait(5)
         while isRunActive() do
@@ -1983,6 +2063,7 @@ task.spawn(function()
         end
     end
 end)
+
 
 
 
