@@ -62,6 +62,7 @@ local DEFAULT_CONFIG = {
         MoveTweenMinTime = 0.08,
         MoveTweenMaxTime = 3.00,
         MoveTweenUpdateInterval = 0.03,
+        PinStickEnabled = false, -- false = always tween smoothly, true = snap/lock when near target
         PinStickDistance = 28,
         EnableReturnToLastPos = false,
         MaxTweenStepDistance = 220,
