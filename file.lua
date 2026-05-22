@@ -51,13 +51,14 @@ local DEFAULT_CONFIG = {
         RotateSpeed = 6.2 / 4,
         OrbitSmooth = 0.42,
         DisableOrbit = true,
+        NoOrbitDistance = 0,
         HeadStrafeEnabled = true,
         HeadStrafeRadius = 3.5,
         HeadStrafeSpeed = 3.2,
         EnableNoclip = true,
         ReturnReachDist = 4,
         ReturnHoldTime = 0.20,
-        TweenSpeed = 7, -- direct tween speed (studs/sec). lower = slower
+        -- TweenSpeed (optional): if set > 0 in external config, it overrides legacy speed formula.
         FlySpeedDivider = 4, -- legacy
         FlySpeedMultiplier = 0.25, -- legacy
         AttackBaseFlySpeed = 220,
@@ -439,6 +440,7 @@ local RADIUS = tonumber(CONFIG.Combat.Radius) or 32
 local ROTATE_SPEED = tonumber(CONFIG.Combat.RotateSpeed) or (6.2 / 4)
 local ORBIT_SMOOTH = tonumber(CONFIG.Combat.OrbitSmooth) or 0.42
 local DISABLE_ORBIT = CONFIG.Combat.DisableOrbit ~= false
+local NO_ORBIT_DISTANCE = math.max(tonumber(CONFIG.Combat.NoOrbitDistance) or 0, 0)
 local HEAD_STRAFE_ENABLED = CONFIG.Combat.HeadStrafeEnabled ~= false
 local HEAD_STRAFE_RADIUS = math.max(tonumber(CONFIG.Combat.HeadStrafeRadius) or 3.5, 0)
 local HEAD_STRAFE_SPEED = math.max(tonumber(CONFIG.Combat.HeadStrafeSpeed) or 3.2, 0)
@@ -460,6 +462,15 @@ local MAX_TWEEN_STEP_DISTANCE = tonumber(CONFIG.Combat.MaxTweenStepDistance) or 
 local WORLD_MIN_Y = tonumber(CONFIG.Combat.WorldMinY) or -50
 local WORLD_MAX_Y = tonumber(CONFIG.Combat.WorldMaxY) or 3000
 local WORLD_MAX_ABS_XZ = tonumber(CONFIG.Combat.WorldMaxAbsXZ) or 25000
+
+print(string.format(
+    "[PennyHub] Combat config: Height=%.2f | NoOrbitDistance=%.2f | TweenSpeed=%s | FlySpeedDivider=%.2f | FlySpeedMultiplier=%.2f",
+    HEIGHT,
+    NO_ORBIT_DISTANCE,
+    tostring(DIRECT_TWEEN_SPEED),
+    FLY_SPEED_DIVIDER,
+    FLY_SPEED_MULTIPLIER
+))
 
 -- AUTO STO TOGGLE
 local AUTO_STO_SETTINGS = GLOBAL_ENV.PENNY_AUTO_STO
@@ -1065,6 +1076,24 @@ local function isValidNPC(model)
     return getNPCType(model) ~= nil
 end
 
+local function getTargetAnchorPosition(model)
+    if not model then
+        return nil
+    end
+
+    local head = model:FindFirstChild("Head")
+    if head and head:IsA("BasePart") then
+        return head.Position
+    end
+
+    local hrp = model:FindFirstChild("HumanoidRootPart")
+    if hrp and hrp:IsA("BasePart") then
+        return hrp.Position
+    end
+
+    return nil
+end
+
 local function getNearestNPC(hrp)
     local bestKing, bestKingDist = nil, math.huge
     local bestWarhammer, bestWarhammerDist = nil, math.huge
@@ -1355,13 +1384,17 @@ RunService.Heartbeat:Connect(function(dt)
             currentTarget = nil
             return
         end
+        local targetAnchorPos = getTargetAnchorPosition(currentTarget) or targetPart.Position
         lastTargetPos = targetPart.Position
         local safeDt = math.min(dt, 1 / 20)
         local orbitCF
 
         if DISABLE_ORBIT then
             -- Keep above target but strafe slightly left-right for smoother combat movement.
-            local fixedPos = targetPart.Position + Vector3.new(0, HEIGHT, 0)
+            local fixedPos = targetAnchorPos + Vector3.new(0, HEIGHT, 0)
+            if NO_ORBIT_DISTANCE > 0 then
+                fixedPos = fixedPos - targetPart.CFrame.LookVector * NO_ORBIT_DISTANCE
+            end
             if HEAD_STRAFE_ENABLED and HEAD_STRAFE_RADIUS > 0 then
                 angle += safeDt * HEAD_STRAFE_SPEED
                 local sideOffset = math.sin(angle) * HEAD_STRAFE_RADIUS
@@ -1369,7 +1402,7 @@ RunService.Heartbeat:Connect(function(dt)
                 local strafePos = fixedPos
                     + targetPart.CFrame.RightVector * sideOffset
                     + targetPart.CFrame.LookVector * forwardOffset
-                orbitCF = CFrame.lookAt(strafePos, targetPart.Position)
+                orbitCF = CFrame.lookAt(strafePos, targetAnchorPos)
             else
                 orbitCF = CFrame.new(fixedPos) * CFrame.Angles(0, math.rad(targetPart.Orientation.Y), 0)
             end
@@ -1377,8 +1410,8 @@ RunService.Heartbeat:Connect(function(dt)
             angle += safeDt * ROTATE_SPEED
             local x = math.cos(angle) * RADIUS
             local z = math.sin(angle) * RADIUS
-            local orbitPos = targetPart.Position + Vector3.new(x, HEIGHT, z)
-            orbitCF = CFrame.lookAt(orbitPos, targetPart.Position)
+            local orbitPos = targetAnchorPos + Vector3.new(x, HEIGHT, z)
+            orbitCF = CFrame.lookAt(orbitPos, targetAnchorPos)
         end
 
         tweenMoveTo(hrp, orbitCF, ATTACK_BASE_FLY_SPEED, true)
