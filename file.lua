@@ -94,6 +94,11 @@ local DEFAULT_CONFIG = {
         PotionEnabled = false,
         PotionInterval = 2,
     },
+    AutoHop = {
+        Enabled = false,
+        Interval = 1800,
+        QueueOnTeleport = true,
+    },
     Webhook = {
         Enabled = false,
         Url = "",
@@ -140,6 +145,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Lighting = game:GetService("Lighting")
 local Terrain = workspace:FindFirstChildOfClass("Terrain")
@@ -151,6 +157,11 @@ local lp = Players.LocalPlayer
 local Msg = ReplicatedStorage:WaitForChild("Msg")
 local WEBHOOK_REQUEST = (syn and syn.request) or (http and http.request) or request or http_request
 local WEBHOOK_CFG = CONFIG.Webhook or {}
+local DEFAULT_LOADER_URL = tostring(
+    (type(CONFIG.General) == "table" and CONFIG.General.LoaderUrl)
+    or GLOBAL_ENV.PENNY_LOADER_URL
+    or "https://raw.githubusercontent.com/hoangkhanhgam-dev/PennyHubWizzard/main/file.lua"
+)
 local webhookLastAt = 0
 local webhookLastMoneyText = nil
 
@@ -327,6 +338,199 @@ if WEBHOOK_CFG.NotifyMoney == true then
             webhookSendMoney(false)
         end
     end)
+end
+
+local function getAutoHopConfig()
+    local cfg = GLOBAL_ENV.PENNY_CONFIG
+    if type(cfg) == "table" and type(cfg.AutoHop) == "table" then
+        return cfg.AutoHop
+    end
+    return CONFIG.AutoHop or {}
+end
+
+local function isAutoHopEnabled()
+    local cfg = getAutoHopConfig()
+    return cfg.Enabled == true
+end
+
+local function getAutoHopInterval()
+    local cfg = getAutoHopConfig()
+    local n = tonumber(cfg.Interval)
+        or tonumber(cfg.HopInterval)
+        or tonumber(cfg.Time)
+        or tonumber(cfg.Delay)
+        or 1800
+    if n < 30 then
+        n = 30
+    end
+    return n
+end
+
+local function shouldQueueOnTeleport()
+    local cfg = getAutoHopConfig()
+    return cfg.QueueOnTeleport ~= false
+end
+
+local function getAutoHopLoaderUrl()
+    local cfg = getAutoHopConfig()
+    local general = (type(GLOBAL_ENV.PENNY_CONFIG) == "table" and GLOBAL_ENV.PENNY_CONFIG.General) or CONFIG.General or {}
+    return tostring(
+        cfg.LoaderUrl
+        or cfg.LoadUrl
+        or general.LoaderUrl
+        or general.LoadUrl
+        or GLOBAL_ENV.PENNY_LOADER_URL
+        or DEFAULT_LOADER_URL
+    )
+end
+
+local function queueScriptForServerHop()
+    if not shouldQueueOnTeleport() then
+        return false
+    end
+
+    local queueFunc = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+    if not queueFunc then
+        return false
+    end
+
+    local ok, configJson = pcall(function()
+        return HttpService:JSONEncode(GLOBAL_ENV.PENNY_CONFIG or CONFIG)
+    end)
+    if not ok then
+        return false
+    end
+
+    local loaderUrl = getAutoHopLoaderUrl()
+    local queuedSource = string.format(
+        "repeat task.wait() until game:IsLoaded()\ngetgenv().PENNY_CONFIG = game:GetService(\"HttpService\"):JSONDecode(%q)\nloadstring(game:HttpGet(%q))()",
+        configJson,
+        loaderUrl
+    )
+
+    local queuedOk = pcall(function()
+        queueFunc(queuedSource)
+    end)
+    return queuedOk
+end
+
+local function fetchHopServerPage(cursor)
+    local url = string.format(
+        "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100",
+        tostring(game.PlaceId)
+    )
+    if cursor and cursor ~= "" then
+        url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+    end
+
+    local ok, body = pcall(function()
+        return game:HttpGet(url)
+    end)
+    if ok and type(body) == "string" and body ~= "" then
+        return body
+    end
+
+    if WEBHOOK_REQUEST then
+        local requestOk, response = pcall(function()
+            return WEBHOOK_REQUEST({
+                Url = url,
+                Method = "GET",
+            })
+        end)
+        if requestOk then
+            local status = tonumber(response and (response.StatusCode or response.Status or response.status_code)) or 200
+            local respBody = response and (response.Body or response.body)
+            if status < 400 and type(respBody) == "string" and respBody ~= "" then
+                return respBody
+            end
+        end
+    end
+
+    return nil
+end
+
+local hopRandom = Random.new()
+
+local function findPublicServerToHop()
+    local currentJobId = tostring(game.JobId or "")
+    local cursor = nil
+    local candidates = {}
+
+    for _ = 1, 5 do
+        local raw = fetchHopServerPage(cursor)
+        if not raw then
+            break
+        end
+
+        local ok, decoded = pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+        if not ok or type(decoded) ~= "table" then
+            break
+        end
+
+        for _, server in ipairs(decoded.data or {}) do
+            if type(server) == "table" then
+                local id = tostring(server.id or "")
+                local playing = tonumber(server.playing) or 0
+                local maxPlayers = tonumber(server.maxPlayers) or 0
+                if id ~= "" and id ~= currentJobId and playing < maxPlayers and maxPlayers > 0 then
+                    table.insert(candidates, id)
+                end
+            end
+        end
+
+        cursor = decoded.nextPageCursor
+        if not cursor or cursor == "" then
+            break
+        end
+    end
+
+    if #candidates <= 0 then
+        return nil
+    end
+
+    return candidates[hopRandom:NextInteger(1, #candidates)]
+end
+
+local autoHopBusy = false
+
+local function performServerHop(reason)
+    if autoHopBusy then
+        return false
+    end
+    autoHopBusy = true
+
+    local queued = queueScriptForServerHop()
+    local targetServerId = findPublicServerToHop()
+
+    if WEBHOOK_CFG.NotifyStart ~= false then
+        webhookSend(
+            "AutoHop",
+            "Reason: " .. tostring(reason or "interval")
+                .. "\nQueued: " .. tostring(queued)
+                .. "\nTargetServer: " .. tostring(targetServerId or "random"),
+            true
+        )
+    end
+
+    local ok = pcall(function()
+        if targetServerId and targetServerId ~= "" then
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, targetServerId, lp)
+        else
+            TeleportService:Teleport(game.PlaceId, lp)
+        end
+    end)
+
+    if not ok and WEBHOOK_CFG.NotifyError ~= false then
+        webhookSend("AutoHop Failed", "Teleport call failed.", true)
+    end
+
+    task.delay(5, function()
+        autoHopBusy = false
+    end)
+
+    return ok
 end
 
 local STRIP_MAP_GRAPHICS = CONFIG.Performance.LowCPU == true
@@ -2088,3 +2292,39 @@ task.spawn(function()
         end
     end
 end)
+
+task.spawn(function()
+    task.wait(5)
+    local nextHopAt = nil
+
+    while isRunActive() do
+        if isAutoHopEnabled() then
+            if not nextHopAt then
+                nextHopAt = tick() + getAutoHopInterval()
+            end
+
+            if tick() >= nextHopAt then
+                performServerHop("interval:" .. tostring(getAutoHopInterval()))
+                nextHopAt = tick() + getAutoHopInterval()
+                task.wait(2)
+            else
+                task.wait(1)
+            end
+        else
+            nextHopAt = nil
+            task.wait(1)
+        end
+    end
+end)
+
+
+
+
+
+
+
+
+
+
+
+
