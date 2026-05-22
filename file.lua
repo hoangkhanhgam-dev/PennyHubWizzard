@@ -51,6 +51,9 @@ local DEFAULT_CONFIG = {
         RotateSpeed = 6.2 / 4,
         OrbitSmooth = 0.42,
         DisableOrbit = true,
+        HeadStrafeEnabled = true,
+        HeadStrafeRadius = 3.5,
+        HeadStrafeSpeed = 3.2,
         EnableNoclip = true,
         ReturnReachDist = 4,
         ReturnHoldTime = 0.20,
@@ -436,6 +439,9 @@ local RADIUS = tonumber(CONFIG.Combat.Radius) or 32
 local ROTATE_SPEED = tonumber(CONFIG.Combat.RotateSpeed) or (6.2 / 4)
 local ORBIT_SMOOTH = tonumber(CONFIG.Combat.OrbitSmooth) or 0.42
 local DISABLE_ORBIT = CONFIG.Combat.DisableOrbit ~= false
+local HEAD_STRAFE_ENABLED = CONFIG.Combat.HeadStrafeEnabled ~= false
+local HEAD_STRAFE_RADIUS = math.max(tonumber(CONFIG.Combat.HeadStrafeRadius) or 3.5, 0)
+local HEAD_STRAFE_SPEED = math.max(tonumber(CONFIG.Combat.HeadStrafeSpeed) or 3.2, 0)
 local ENABLE_NOCLIP = CONFIG.Combat.EnableNoclip ~= false
 local RETURN_REACH_DIST = tonumber(CONFIG.Combat.ReturnReachDist) or 4
 local RETURN_HOLD_TIME = tonumber(CONFIG.Combat.ReturnHoldTime) or 0.20
@@ -1354,9 +1360,19 @@ RunService.Heartbeat:Connect(function(dt)
         local orbitCF
 
         if DISABLE_ORBIT then
-            -- Stand straight above NPC head (no circle, no tilt).
+            -- Keep above target but strafe slightly left-right for smoother combat movement.
             local fixedPos = targetPart.Position + Vector3.new(0, HEIGHT, 0)
-            orbitCF = CFrame.new(fixedPos) * CFrame.Angles(0, math.rad(targetPart.Orientation.Y), 0)
+            if HEAD_STRAFE_ENABLED and HEAD_STRAFE_RADIUS > 0 then
+                angle += safeDt * HEAD_STRAFE_SPEED
+                local sideOffset = math.sin(angle) * HEAD_STRAFE_RADIUS
+                local forwardOffset = math.cos(angle * 0.5) * (HEAD_STRAFE_RADIUS * 0.25)
+                local strafePos = fixedPos
+                    + targetPart.CFrame.RightVector * sideOffset
+                    + targetPart.CFrame.LookVector * forwardOffset
+                orbitCF = CFrame.lookAt(strafePos, targetPart.Position)
+            else
+                orbitCF = CFrame.new(fixedPos) * CFrame.Angles(0, math.rad(targetPart.Orientation.Y), 0)
+            end
         else
             angle += safeDt * ROTATE_SPEED
             local x = math.cos(angle) * RADIUS
