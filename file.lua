@@ -1,4 +1,6 @@
 -- PennyHub Wizard - clean build
+repeat task.wait() until game:IsLoaded()
+
 local GLOBAL_ENV = (getgenv and getgenv()) or _G
 
 local function toBool(value, defaultValue)
@@ -170,14 +172,59 @@ pcall(function()
     end
 end)
 
+local function waitForLocalPlayer(timeout)
+    local deadline = tick() + (tonumber(timeout) or 20)
+    local player = Players.LocalPlayer
+    while not player and tick() < deadline do
+        task.wait(0.1)
+        player = Players.LocalPlayer
+    end
+    return player
+end
+
+local function safeWaitForChild(parent, childName, timeout)
+    if not parent then
+        return nil
+    end
+
+    local ok, result = pcall(function()
+        return parent:WaitForChild(childName, tonumber(timeout) or 20)
+    end)
+
+    if ok and result then
+        return result
+    end
+    return nil
+end
+
 task.wait(tonumber(CONFIG.General.StartupDelay) or 2.5)
 
-local lp = Players.LocalPlayer
-local Msg = ReplicatedStorage:WaitForChild("Msg")
+local lp = waitForLocalPlayer(20)
+if not lp then
+    warn("[PennyHub] LocalPlayer not ready, stop loading.")
+    return
+end
 
-local SkillRemote = Msg:WaitForChild("RemoteEvent"):WaitForChild("ReleaseGroupSkill")
-local AttrRemote = Msg:WaitForChild("RemoteFunction"):WaitForChild("RemoteFunction")
-local TalkFunc = Msg:WaitForChild("Function"):WaitForChild("TalkFunc")
+safeWaitForChild(lp, "PlayerGui", 20)
+
+local Msg = safeWaitForChild(ReplicatedStorage, "Msg", 20)
+local remoteEventFolder = safeWaitForChild(Msg, "RemoteEvent", 20)
+local remoteFunctionFolder = safeWaitForChild(Msg, "RemoteFunction", 20)
+local functionFolder = safeWaitForChild(Msg, "Function", 20)
+
+if not Msg then
+    warn("[PennyHub] Msg folder not found in ReplicatedStorage. Continuing with limited features.")
+elseif not remoteEventFolder or not remoteFunctionFolder or not functionFolder then
+    warn("[PennyHub] One or more Msg folders are missing: RemoteEvent / RemoteFunction / Function.")
+end
+
+local SkillRemote = safeWaitForChild(remoteEventFolder, "ReleaseGroupSkill", 20)
+local AttrRemote = safeWaitForChild(remoteFunctionFolder, "RemoteFunction", 20)
+local TalkFunc = safeWaitForChild(functionFolder, "TalkFunc", 20)
+
+if not SkillRemote or not AttrRemote or not TalkFunc then
+    warn("[PennyHub] Required remotes missing: ReleaseGroupSkill / RemoteFunction / TalkFunc. Continuing with limited features.")
+end
 
 local WEBHOOK_REQUEST = (syn and syn.request) or (http and http.request) or request or http_request
 
