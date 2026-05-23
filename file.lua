@@ -54,6 +54,7 @@ local DEFAULT_CONFIG = {
         NoOrbitDistance = 0,
         SpeedBoost = 1.0, -- >1 faster, <1 slower
         TweenSpeed = 30, -- default target movement speed, slightly below 35 studs/s
+        ConstantTweenSpeed = true, -- keep movement speed stable regardless of distance
         HeadStrafeEnabled = true,
         HeadStrafeRadius = 3.5,
         HeadStrafeSpeed = 3.2,
@@ -776,6 +777,21 @@ local function resolveTweenTiming()
     return minTime, maxTime, updateInterval
 end
 
+local function useConstantTweenSpeed()
+    local runtime = getRuntimeCombatConfig()
+    local raw = runtime.ConstantTweenSpeed
+    if raw == nil then
+        raw = runtime.FixedTweenSpeed
+    end
+    if raw == nil then
+        raw = GLOBAL_ENV.PENNY_CONSTANT_TWEEN_SPEED
+    end
+    if raw == nil then
+        return true
+    end
+    return toBool(raw, true)
+end
+
 local __initSpeed, __initMode = resolveMovementSpeed(ATTACK_BASE_FLY_SPEED)
 local __runtimeCombat = getRuntimeCombatConfig()
 local __initBoost = firstNumber(
@@ -1079,7 +1095,12 @@ local function tweenMoveTo(hrp, targetCF, baseFlySpeed, allowPinStick)
     lastMoveTargetCF = targetCF
 
     local speed = resolveMovementSpeed(baseFlySpeed)
-    local duration = math.clamp(dist / speed, minTweenTime, maxTweenTime)
+    local duration
+    if useConstantTweenSpeed() then
+        duration = math.max(dist / speed, 0.01)
+    else
+        duration = math.clamp(dist / speed, minTweenTime, maxTweenTime)
+    end
 
     stopMoveTween()
 
@@ -1557,7 +1578,12 @@ local function completeQuestByNPC(hrp)
     local npcDist = (hrp.Position - targetCF.Position).Magnitude
     local npcSpeed = resolveMovementSpeed(RETURN_BASE_FLY_SPEED)
     local minTweenTime, maxTweenTime = resolveTweenTiming()
-    local npcDuration = math.clamp(npcDist / npcSpeed, minTweenTime, math.max(maxTweenTime, 0.25))
+    local npcDuration
+    if useConstantTweenSpeed() then
+        npcDuration = math.max(npcDist / npcSpeed, 0.01)
+    else
+        npcDuration = math.clamp(npcDist / npcSpeed, minTweenTime, math.max(maxTweenTime, 0.25))
+    end
     local tweenInfo = TweenInfo.new(npcDuration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     local toNpcTween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCF})
     toNpcTween:Play()
