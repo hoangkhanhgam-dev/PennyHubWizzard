@@ -53,13 +53,13 @@ local DEFAULT_CONFIG = {
         DisableOrbit = true,
         NoOrbitDistance = 0,
         SpeedBoost = 1.0, -- >1 faster, <1 slower
+        TweenSpeed = 30, -- default target movement speed, slightly below 35 studs/s
         HeadStrafeEnabled = true,
         HeadStrafeRadius = 3.5,
         HeadStrafeSpeed = 3.2,
         EnableNoclip = true,
         ReturnReachDist = 4,
         ReturnHoldTime = 0.20,
-        -- TweenSpeed (optional): if set > 0 in external config, it overrides legacy speed formula.
         FlySpeedDivider = 4, -- legacy
         FlySpeedMultiplier = 0.25, -- legacy
         AttackBaseFlySpeed = 220,
@@ -96,7 +96,7 @@ local DEFAULT_CONFIG = {
     },
     AutoHop = {
         Enabled = false,
-        Interval = 1800,
+        Interval = 600,
         QueueOnTeleport = true,
     },
     Webhook = {
