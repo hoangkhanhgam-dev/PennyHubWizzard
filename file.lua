@@ -777,6 +777,25 @@ local function resolveTweenTiming()
     return minTime, maxTime, updateInterval
 end
 
+local function toBool(v, defaultValue)
+    if type(v) == "boolean" then
+        return v
+    end
+    if type(v) == "number" then
+        return v ~= 0
+    end
+    if type(v) == "string" then
+        local s = v:lower()
+        if s == "true" or s == "1" or s == "yes" or s == "on" then
+            return true
+        end
+        if s == "false" or s == "0" or s == "no" or s == "off" then
+            return false
+        end
+    end
+    return defaultValue
+end
+
 local function useConstantTweenSpeed()
     local runtime = getRuntimeCombatConfig()
     local raw = runtime.ConstantTweenSpeed
@@ -838,25 +857,6 @@ else
     end
 end
 GLOBAL_ENV.PENNY_AUTO_STO = AUTO_STO_SETTINGS
-
-local function toBool(v, defaultValue)
-    if type(v) == "boolean" then
-        return v
-    end
-    if type(v) == "number" then
-        return v ~= 0
-    end
-    if type(v) == "string" then
-        local s = v:lower()
-        if s == "true" or s == "1" or s == "yes" or s == "on" then
-            return true
-        end
-        if s == "false" or s == "0" or s == "no" or s == "off" then
-            return false
-        end
-    end
-    return defaultValue
-end
 
 local function isAutoStoEnabled()
     local cfgA = GLOBAL_ENV.PENNY_AUTO_STO
